@@ -8,7 +8,8 @@ export interface RestorePort {
   groupTabs(windowId: number, tabIds: number[], group: SavedGroup): Promise<void>;
 }
 
-export async function restoreSession(snapshot: Snapshot, port: RestorePort, persist: (operation: Operation) => Promise<void>): Promise<Operation> {
+export async function restoreSession(snapshot: Snapshot, port: RestorePort, persist: (operation: Operation) => Promise<void>): Promise<Operation>
+{
   const allTabs = snapshot.windows.flatMap(window => window.tabs);
   const progress: RestoreProgress = {
     snapshotId: snapshot.id, startedAt: Date.now(), opened: 0,
@@ -40,7 +41,8 @@ export async function restoreSession(snapshot: Snapshot, port: RestorePort, pers
       await save();
     }
     const grouped = new Map<number, number[]>();
-    const addGroup = (group: number | null, tabId: number) => {
+    const addGroup = (group: number | null, tabId: number) =>
+    {
       if (group !== null) grouped.set(group, [...(grouped.get(group) ?? []), tabId]);
     };
     addGroup(first.group, created.tabId);

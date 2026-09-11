@@ -14,9 +14,11 @@ export class Repository {
   private connection: Promise<IDBPDatabase<BackupDatabase>> | null = null;
   constructor(private readonly name = 'tabblackbox', private readonly budget = BYTE_BUDGET) {}
 
-  private db(): Promise<IDBPDatabase<BackupDatabase>> {
+  private db(): Promise<IDBPDatabase<BackupDatabase>>
+  {
     this.connection ??= openDB<BackupDatabase>(this.name, 1, {
-      upgrade(db) {
+      upgrade(db)
+      {
         db.createObjectStore('snapshots', { keyPath: 'id' });
         db.createObjectStore('summaries', { keyPath: 'id' }).createIndex('capturedAt', 'capturedAt');
         db.createObjectStore('metadata');
@@ -27,24 +29,28 @@ export class Repository {
     return this.connection;
   }
 
-  async close(): Promise<void> {
+  async close(): Promise<void>
+  {
     const connection = this.connection;
     this.connection = null;
     if (connection) (await connection).close();
   }
 
-  async metadata(): Promise<Metadata> {
+  async metadata(): Promise<Metadata>
+  {
     return (await (await this.db()).get('metadata', 'state')) ?? initialMetadata();
   }
 
-  async get(id: string): Promise<Snapshot> {
+  async get(id: string): Promise<Snapshot>
+  {
     const snapshot = await (await this.db()).get('snapshots', id);
     if (!snapshot) throw new Error('This backup is no longer available. Refresh history.');
     if (snapshot.schemaVersion !== 1) throw new Error('This backup needs a newer version of TabBlackBox.');
     return snapshot;
   }
 
-  async list(before: HistoryCursor | null = null, limit = 50): Promise<Summary[]> {
+  async list(before: HistoryCursor | null = null, limit = 50): Promise<Summary[]>
+  {
     const db = await this.db();
     const transaction = db.transaction('summaries');
     const range = before ? IDBKeyRange.upperBound(before.capturedAt) : null;
@@ -59,7 +65,8 @@ export class Repository {
     return result;
   }
 
-  async capture(session: Session, source: Source, now: number): Promise<CaptureResult> {
+  async capture(session: Session, source: Source, now: number): Promise<CaptureResult>
+  {
     const db = await this.db();
     // update snapshots, summaries, and metadata in one transaction
     const tx = db.transaction(['snapshots', 'summaries', 'metadata'], 'readwrite');
@@ -101,7 +108,8 @@ export class Repository {
     }
   }
 
-  async setOperation(operation: Operation): Promise<void> {
+  async setOperation(operation: Operation): Promise<void>
+  {
     const tx = (await this.db()).transaction('metadata', 'readwrite');
     const metadata = (await tx.store.get('state')) ?? initialMetadata();
     metadata.operation = operation;
@@ -109,7 +117,8 @@ export class Repository {
     await tx.done;
   }
 
-  async recoverOperation(now = Date.now()): Promise<void> {
+  async recoverOperation(now = Date.now()): Promise<void>
+  {
     const operation = (await this.metadata()).operation;
     if (operation?.kind === 'running') await this.setOperation({ ...operation, kind: 'interrupted', finishedAt: now });
   }

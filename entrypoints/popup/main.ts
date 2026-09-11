@@ -26,12 +26,14 @@ root.append(header, content, el('footer', 'popup-footer', 'Stored on this device
 
 let backingUp = false;
 let restoring = false;
-function updateSave(): void {
+function updateSave(): void
+{
   save.disabled = backingUp || restoring;
   const label = backingUp ? 'Backing up…' : 'Back up now';
   if (saveLabel.data !== label) saveLabel.data = label;
 }
-const refresh = createRefreshQueue(async kind => {
+const refresh = createRefreshQueue(async kind =>
+{
   if (kind === 'backup') feedback.replaceChildren();
   try {
     const data = await request({ kind });

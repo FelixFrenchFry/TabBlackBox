@@ -3,7 +3,8 @@ import { BYTE_BUDGET } from '../session';
 import { readAppearance, setAppearance } from './appearance';
 import { el, icon, icons, notice, plural, statusView } from './shared';
 
-function settingsPanel(title: string, glyph: Parameters<typeof icon>[0]) {
+function settingsPanel(title: string, glyph: Parameters<typeof icon>[0])
+{
   const element = el('section', 'settings-card');
   const header = el('h2', 'list-header', title);
   header.prepend(icon(glyph));
@@ -12,7 +13,8 @@ function settingsPanel(title: string, glyph: Parameters<typeof icon>[0]) {
   return { element, body };
 }
 
-export function createSettingsView() {
+export function createSettingsView()
+{
   const element = el('main', 'history-main');
   const heading = el('div', 'page-heading');
   const titles = el('div');
@@ -34,7 +36,8 @@ export function createSettingsView() {
   window.addEventListener('storage', sync);
   const appearanceFeedback = el('div');
   appearanceFeedback.setAttribute('aria-live', 'polite');
-  select.addEventListener('change', () => {
+  select.addEventListener('change', () =>
+  {
     const value = select.value;
     if (value !== 'system' && value !== 'light' && value !== 'dark') return;
     try { setAppearance(value); appearanceFeedback.replaceChildren(); }
@@ -63,7 +66,8 @@ export function createSettingsView() {
   element.append(heading, appearance, feedback, storage, automatic);
   return {
     element,
-    update(overview: Overview): void {
+    update(overview: Overview): void
+    {
       feedback.replaceChildren();
       const mib = overview.metadata.bytes / 1024 / 1024;
       const used = mib > 0 && mib < 0.01 ? '<0.01' : mib.toLocaleString(undefined, { maximumFractionDigits: 2 });

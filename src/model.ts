@@ -25,7 +25,8 @@ export type CaptureResult = { kind: 'saved'; id: string } | { kind: 'unchanged' 
 export type Status = { kind: 'initializing' | 'pending' | 'current' | 'empty' | 'restoring' } | { kind: 'error'; message: string };
 export type Overview = { status: Status; metadata: Metadata; latest: Summary | null };
 
-export function errorMessage(error: unknown): string {
+export function errorMessage(error: unknown): string
+{
   if (error instanceof Error && (error.name === 'QuotaExceededError' || error.message.includes('storage full'))) return 'Backup failed: storage full. New changes are not being backed up.';
   return error instanceof Error ? error.message : 'An unexpected error occurred.';
 }

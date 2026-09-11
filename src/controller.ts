@@ -31,19 +31,22 @@ export class Controller {
   ) {}
 
   get status(): Status { return this.currentStatus; }
-  set status(value: Status) {
+  set status(value: Status)
+  {
     const previous = this.currentStatus;
     if (previous.kind === value.kind && (previous.kind !== 'error' || (value.kind === 'error' && previous.message === value.message))) return;
     this.currentStatus = value;
     this.onStatusChange(value);
   }
 
-  start(forceRetry = false): Promise<void> {
+  start(forceRetry = false): Promise<void>
+  {
     if (!this.ready && !forceRetry && this.initializationFailure && Date.now() < this.initializationFailure.retryAt) {
       return Promise.reject(new Error(this.initializationFailure.message));
     }
     // recover interrupted work before the first automatic capture
-    this.ready ??= this.enqueue(async () => {
+    this.ready ??= this.enqueue(async () =>
+    {
       try {
         await this.repository.recoverOperation();
         this.initializationFailure = undefined;
@@ -58,7 +61,8 @@ export class Controller {
     return this.ready;
   }
 
-  private enqueue<T>(action: () => Promise<T>): Promise<T> {
+  private enqueue<T>(action: () => Promise<T>): Promise<T>
+  {
     const next = this.queue.then(action);
     this.queue = next.then(() => undefined, () => undefined);
     return next;
@@ -66,13 +70,15 @@ export class Controller {
 
   idle(): Promise<void> { return this.queue; }
 
-  stopTimers(): void {
+  stopTimers(): void
+  {
     clearTimeout(this.timer);
     this.timer = undefined;
     this.firstChange = undefined;
   }
 
-  changed(): void {
+  changed(): void
+  {
     this.generation++;
     if (this.restoration.kind === 'running' || Date.now() < this.retryAfter || (this.initializationFailure && Date.now() < this.initializationFailure.retryAt)) return;
     if (this.status.kind !== 'error') this.status = { kind: 'pending' };
@@ -80,15 +86,18 @@ export class Controller {
     this.scheduleCapture(Math.max(0, Math.min(2000, this.firstChange + 10_000 - Date.now())));
   }
 
-  private scheduleCapture(delay: number): void {
+  private scheduleCapture(delay: number): void
+  {
     clearTimeout(this.timer);
-    this.timer = setTimeout(() => {
+    this.timer = setTimeout(() =>
+    {
       this.stopTimers();
       void this.capture('automatic').catch(() => { /* startup errors surface in status and retry on the next event or alarm */ });
     }, delay);
   }
 
-  async capture(source: Source): Promise<void> {
+  async capture(source: Source): Promise<void>
+  {
     await this.start(source === 'manual');
     if (this.restoration.kind !== 'idle') {
       if (source === 'manual') throw new BackupBusyError();
@@ -101,7 +110,8 @@ export class Controller {
     await this.enqueue(() => this.performCapture(source));
   }
 
-  private async performCapture(source: Source): Promise<void> {
+  private async performCapture(source: Source): Promise<void>
+  {
     const generation = this.generation;
     // discard scans that become stale while browser state changes
     let session: Session;
@@ -125,7 +135,8 @@ export class Controller {
     }
   }
 
-  async overview(): Promise<Overview> {
+  async overview(): Promise<Overview>
+  {
     try { await this.start(); }
     catch { /* saved backups remain readable when recovery needs a write */ }
     const metadata = await this.repository.metadata();
@@ -133,14 +144,17 @@ export class Controller {
     return { status: this.status, metadata, latest: newest ? summarize(newest) : null };
   }
 
-  async restore(id: string): Promise<void> {
+  async restore(id: string): Promise<void>
+  {
     await this.start(true);
     if (this.restoration.kind !== 'idle') throw new Error('A restoration is already in progress.');
     const reservation: RestorationState & { kind: 'waiting' } = { kind: 'waiting', automaticPending: false };
     this.restoration = reservation;
-    return new Promise<void>((resolve, reject) => {
+    return new Promise<void>((resolve, reject) =>
+    {
       // queue validation and browser work after admitted captures
-      void this.enqueue(async () => {
+      void this.enqueue(async () =>
+      {
         let snapshot: Snapshot;
         try {
           snapshot = await this.repository.get(id);

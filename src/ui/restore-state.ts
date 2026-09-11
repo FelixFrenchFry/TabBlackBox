@@ -4,6 +4,7 @@ export type RestoreAvailability = {
   restoring: boolean;
 };
 
-export function canRestore({ supportedCount, backingUp, restoring }: RestoreAvailability): boolean {
+export function canRestore({ supportedCount, backingUp, restoring }: RestoreAvailability): boolean
+{
   return supportedCount > 0 && !backingUp && !restoring;
 }

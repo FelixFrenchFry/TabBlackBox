@@ -1,14 +1,17 @@
 type RefreshKind = 'overview' | 'refresh' | 'backup';
 
-export function createRefreshQueue(run: (kind: RefreshKind) => Promise<void>, setBackingUp: (value: boolean) => void): (kind: RefreshKind) => Promise<void> {
+export function createRefreshQueue(run: (kind: RefreshKind) => Promise<void>, setBackingUp: (value: boolean) => void): (kind: RefreshKind) => Promise<void>
+{
   let active: Promise<void> | undefined;
   let backup: Promise<void> | undefined;
-  return kind => {
+  return kind =>
+  {
     if (kind === 'backup') {
       if (backup) return backup;
       setBackingUp(true);
       const previous = active;
-      backup = (async () => {
+      backup = (async () =>
+      {
         // keep the queued backup after a failed poll
         await previous?.catch(() => undefined);
         await run('backup');

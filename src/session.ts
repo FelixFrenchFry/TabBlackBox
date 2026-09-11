@@ -4,7 +4,8 @@ export type CaptureTab = { index: number; url?: string; pendingUrl?: string; tit
 export type CaptureWindow = { id?: number; type?: string; incognito: boolean; tabs?: CaptureTab[] };
 export type CaptureGroup = { id: number; windowId: number; title?: string; color: GroupColor; collapsed: boolean };
 
-export function normalizeSession(windows: CaptureWindow[], groups: CaptureGroup[], ownOrigin: string): Session {
+export function normalizeSession(windows: CaptureWindow[], groups: CaptureGroup[], ownOrigin: string): Session
+{
   const saved: SavedWindow[] = [];
   for (const window of windows) {
     if (window.incognito || window.type !== 'normal') continue;
@@ -31,11 +32,13 @@ export function normalizeSession(windows: CaptureWindow[], groups: CaptureGroup[
   return { windows: saved };
 }
 
-export function canonicalSession(session: Session): string {
+export function canonicalSession(session: Session): string
+{
   return JSON.stringify(session.windows.map(window => JSON.stringify(window)).sort());
 }
 
-export function restorableUrl(url: string | null): url is string {
+export function restorableUrl(url: string | null): url is string
+{
   if (url === 'about:blank') return true;
   if (!url) return false;
   try {
@@ -47,12 +50,14 @@ export function restorableUrl(url: string | null): url is string {
 export const DAY_MS = 86_400_000;
 export const BYTE_BUDGET = 100 * 1024 * 1024;
 
-export function retainedIds(records: { id: string; capturedAt: number }[], now: number): Set<string> {
+export function retainedIds(records: { id: string; capturedAt: number }[], now: number): Set<string>
+{
   const newest = [...records].sort((a, b) => b.capturedAt - a.capturedAt || b.id.localeCompare(a.id));
   return new Set(newest.filter((item, index) => index < 200 || item.capturedAt >= now - DAY_MS).map(item => item.id));
 }
 
-export function summarize(snapshot: Snapshot): Summary {
+export function summarize(snapshot: Snapshot): Summary
+{
   const tabs = snapshot.windows.flatMap(window => window.tabs);
   return {
     id: snapshot.id, capturedAt: snapshot.capturedAt, source: snapshot.source,

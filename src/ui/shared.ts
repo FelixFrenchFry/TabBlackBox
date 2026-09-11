@@ -6,39 +6,45 @@ import './style.css';
 
 export const icons = { Archive, ArrowUpRight, Check, ChevronDown, CircleAlert, Clock3, FileText, Globe, HardDrive, History, LoaderCircle, Monitor, Palette, Pin, RotateCcw, Save, Settings, ShieldCheck };
 
-export function icon(node: IconNode, size = 16): SVGElement {
+export function icon(node: IconNode, size = 16): SVGElement
+{
   return createElement(node, { width: size, height: size, 'stroke-width': 1.75, 'aria-hidden': 'true', focusable: 'false' });
 }
 
-export function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = '', text = ''): HTMLElementTagNameMap[K] {
+export function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = '', text = ''): HTMLElementTagNameMap[K]
+{
   const element = document.createElement(tag);
   element.className = className;
   element.textContent = text;
   return element;
 }
 
-export function button(label: string, glyph: IconNode, className = 'button'): HTMLButtonElement {
+export function button(label: string, glyph: IconNode, className = 'button'): HTMLButtonElement
+{
   const element = el('button', className);
   element.type = 'button';
   element.append(icon(glyph), document.createTextNode(label));
   return element;
 }
 
-export async function request(message: Request): Promise<Data> {
+export async function request(message: Request): Promise<Data>
+{
   const reply: Reply | undefined = await chrome.runtime.sendMessage(message);
   if (!reply) throw new Error('The background service is unavailable. Try again.');
   if (!reply.ok) throw new Error(reply.error);
   return reply.data;
 }
 
-export function setup(): HTMLElement {
+export function setup(): HTMLElement
+{
   initializeAppearance();
   const root = document.getElementById('app');
   if (!root) throw new Error('Application root is missing.');
   return root;
 }
 
-export function brand(): HTMLElement {
+export function brand(): HTMLElement
+{
   const item = el('div', 'brand');
   const logo = el('img', 'logo');
   logo.src = '/icon/logo.svg';
@@ -47,11 +53,13 @@ export function brand(): HTMLElement {
   return item;
 }
 
-export function formatTime(value: number | null): string {
+export function formatTime(value: number | null): string
+{
   return value === null ? 'Not yet saved' : new Date(value).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
-export function statusView(overview: Overview): HTMLElement {
+export function statusView(overview: Overview): HTMLElement
+{
   const { status, metadata, latest } = overview;
   const view = el('section', `status-card status-${status.kind}`);
   view.setAttribute('aria-label', 'Backup status');
@@ -66,7 +74,8 @@ export function statusView(overview: Overview): HTMLElement {
   return view;
 }
 
-export function notice(message: string): HTMLElement {
+export function notice(message: string): HTMLElement
+{
   const node = el('div', 'notice error-notice', message);
   node.setAttribute('role', 'alert');
   return node;

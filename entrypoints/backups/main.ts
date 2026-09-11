@@ -4,6 +4,7 @@ import { canRestore } from '../../src/ui/restore-state';
 import { setup, brand, button, icons, icon, el, request, statusView, notice, formatTime, plural } from '../../src/ui/shared';
 import { createRefreshQueue } from '../../src/ui/refresh-queue';
 import { createSettingsView } from '../../src/ui/settings';
+import { HISTORY_INITIAL_LIMIT, HISTORY_PAGE_LIMIT } from '../../src/protocol';
 
 const root = setup();
 const header = el('header', 'app-header');
@@ -49,7 +50,8 @@ main.append(heading, status, feedback, operationRegion, list, more, footer);
 const settings = createSettingsView();
 root.append(header, nav, main, settings.element);
 
-function showView(): void {
+function showView(): void
+{
   const isSettings = location.hash === '#settings';
   main.hidden = isSettings;
   settings.element.hidden = !isSettings;
@@ -72,7 +74,8 @@ let operationKey = '';
 const restoreButtons = new Map<HTMLButtonElement, number>();
 const sessionRows = new Map<string, ReturnType<typeof row>>();
 
-function renderOperation(operation: Operation | null): void {
+function renderOperation(operation: Operation | null): void
+{
   const key = JSON.stringify(operation);
   if (operationKey === key) return;
   operationKey = key;
@@ -94,7 +97,8 @@ function renderOperation(operation: Operation | null): void {
   operationRegion.append(section);
 }
 
-async function confirmRestore(snapshot: Snapshot, trigger: HTMLButtonElement): Promise<void> {
+async function confirmRestore(snapshot: Snapshot, trigger: HTMLButtonElement): Promise<void>
+{
   if (restoring || backingUp) return;
   const tabs = snapshot.windows.flatMap(window => window.tabs);
   const supported = tabs.filter(tab => restorableUrl(tab.url)).length;
@@ -114,9 +118,11 @@ async function confirmRestore(snapshot: Snapshot, trigger: HTMLButtonElement): P
   root.append(dialog);
   cancel.addEventListener('click', () => dialog.close());
   dialog.addEventListener('close', () => { dialog.remove(); trigger.focus(); });
-  confirm.addEventListener('click', () => {
+  confirm.addEventListener('click', () =>
+  {
     confirm.disabled = true;
-    void (async () => {
+    void (async () =>
+    {
       try {
         await request({ kind: 'restore', id: snapshot.id });
         restoring = true;
@@ -131,7 +137,8 @@ async function confirmRestore(snapshot: Snapshot, trigger: HTMLButtonElement): P
   cancel.focus();
 }
 
-function favicon(url: string | null): HTMLElement {
+function favicon(url: string | null): HTMLElement
+{
   const frame = el('span', 'tab-favicon');
   frame.setAttribute('aria-hidden', 'true');
   const fallback = icon(url?.startsWith('file:') ? icons.FileText : icons.Globe);
@@ -153,7 +160,8 @@ function favicon(url: string | null): HTMLElement {
   return frame;
 }
 
-function preview(snapshot: Snapshot): HTMLElement {
+function preview(snapshot: Snapshot): HTMLElement
+{
   const content = el('div', 'snapshot-preview');
   for (const [index, window] of snapshot.windows.entries()) {
     const section = el('section', 'window-preview');
@@ -197,7 +205,8 @@ function preview(snapshot: Snapshot): HTMLElement {
   return content;
 }
 
-function row(item: Summary) {
+function row(item: Summary)
+{
   const wrapper = el('article', 'backup-row');
   const details = el('details');
   const summary = el('summary', 'backup-summary');
@@ -211,7 +220,8 @@ function row(item: Summary) {
   restoreButtons.set(restore, item.supportedCount);
   wrapper.append(details, restore);
   let snapshot: Snapshot | undefined;
-  async function load(): Promise<Snapshot> {
+  async function load(): Promise<Snapshot>
+  {
     if (snapshot) return snapshot;
     const data = await request({ kind: 'snapshot', id: item.id });
     if (data.kind !== 'snapshot') throw new Error('Unexpected backup response.');
@@ -219,20 +229,23 @@ function row(item: Summary) {
     return snapshot;
   }
   let rendered = false;
-  details.addEventListener('toggle', () => {
+  details.addEventListener('toggle', () =>
+  {
     if (details.open && !rendered) {
       rendered = true;
       void load().then(value => details.append(preview(value)), (error: unknown) => { rendered = false; details.append(notice(errorMessage(error))); });
     }
   });
-  restore.addEventListener('click', () => {
+  restore.addEventListener('click', () =>
+  {
     restore.disabled = true;
     void load().then(value => confirmRestore(value, restore)).catch((error: unknown) => feedback.replaceChildren(notice(errorMessage(error)))).finally(() => { restore.disabled = !canRestore({ supportedCount: item.supportedCount, backingUp, restoring }); });
   });
   return { element: wrapper, details, restore };
 }
 
-function renderHistory(): void {
+function renderHistory(): void
+{
   const ids = new Set(items.map(item => item.id));
   for (const [id, saved] of sessionRows) {
     if (ids.has(id)) continue;
@@ -259,7 +272,8 @@ function renderHistory(): void {
   }
 }
 
-async function loadHistory(reset: boolean): Promise<void> {
+async function loadHistory(reset: boolean): Promise<void>
+{
   const generation = reset ? ++historyGeneration : historyGeneration;
   const last = reset ? undefined : items.at(-1);
   more.disabled = true;
@@ -268,9 +282,10 @@ async function loadHistory(reset: boolean): Promise<void> {
     if (generation !== historyGeneration) return;
     if (data.kind !== 'history') throw new Error('Unexpected history response.');
     let page = data.items;
+    let pageLimit = last ? HISTORY_PAGE_LIMIT : HISTORY_INITIAL_LIMIT;
     const loaded = [...page];
     // refresh through the oldest expanded session before updating the visible list
-    while (reset && page.length === 50) {
+    while (reset && page.length === pageLimit) {
       const oldestOpen = items.findLast(item => sessionRows.get(item.id)?.details.open);
       const end = loaded.at(-1);
       if (!oldestOpen || !end || end.capturedAt < oldestOpen.capturedAt || (end.capturedAt === oldestOpen.capturedAt && end.id <= oldestOpen.id)) break;
@@ -278,12 +293,13 @@ async function loadHistory(reset: boolean): Promise<void> {
       if (generation !== historyGeneration) return;
       if (older.kind !== 'history') throw new Error('Unexpected history response.');
       page = older.items;
+      pageLimit = HISTORY_PAGE_LIMIT;
       loaded.push(...page);
     }
     if (reset) items = loaded;
     else items.push(...loaded);
     renderHistory();
-    more.hidden = page.length < 50;
+    more.hidden = page.length < pageLimit;
   } catch (error) {
     if (generation === historyGeneration) throw error;
   } finally {
@@ -291,17 +307,20 @@ async function loadHistory(reset: boolean): Promise<void> {
   }
 }
 
-function updateSave(): void {
+function updateSave(): void
+{
   save.disabled = backingUp || restoring;
   const label = backingUp ? 'Backing up…' : 'Back up now';
   if (saveLabel.data !== label) saveLabel.data = label;
 }
 
-function updateRestoreButtons(): void {
+function updateRestoreButtons(): void
+{
   for (const [button, supportedCount] of restoreButtons) button.disabled = !canRestore({ supportedCount, backingUp, restoring });
 }
 
-function applyOverview(overview: Overview): void {
+function applyOverview(overview: Overview): void
+{
   settings.update(overview);
   status.replaceChildren(statusView(overview));
   count.textContent = String(overview.metadata.count);
@@ -311,7 +330,8 @@ function applyOverview(overview: Overview): void {
   renderOperation(overview.metadata.operation);
 }
 
-const refresh = createRefreshQueue(async kind => {
+const refresh = createRefreshQueue(async kind =>
+{
   if (kind === 'backup') feedback.replaceChildren();
   try {
     const data = await request({ kind });
@@ -329,7 +349,8 @@ const refresh = createRefreshQueue(async kind => {
   }
 }, value => { backingUp = value; updateSave(); updateRestoreButtons(); });
 save.addEventListener('click', () => { void refresh('backup'); });
-more.addEventListener('click', () => {
+more.addEventListener('click', () =>
+{
   void loadHistory(false).catch((error: unknown) => feedback.replaceChildren(notice(errorMessage(error))));
 });
 void refresh('refresh');
