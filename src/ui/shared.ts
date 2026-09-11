@@ -1,10 +1,10 @@
-import { createElement, Archive, ArrowUpRight, Check, ChevronDown, CircleAlert, Clock3, HardDrive, History, LoaderCircle, Monitor, Palette, Pin, RotateCcw, Save, Settings, ShieldCheck, type IconNode } from 'lucide';
+import { createElement, Archive, ArrowUpRight, Check, ChevronDown, CircleAlert, Clock3, FileText, Globe, HardDrive, History, LoaderCircle, Monitor, Palette, Pin, RotateCcw, Save, Settings, ShieldCheck, type IconNode } from 'lucide';
 import type { Data, Reply, Request } from '../protocol';
 import type { Overview } from '../model';
 import { initializeAppearance } from './appearance';
 import './style.css';
 
-export const icons = { Archive, ArrowUpRight, Check, ChevronDown, CircleAlert, Clock3, HardDrive, History, LoaderCircle, Monitor, Palette, Pin, RotateCcw, Save, Settings, ShieldCheck };
+export const icons = { Archive, ArrowUpRight, Check, ChevronDown, CircleAlert, Clock3, FileText, Globe, HardDrive, History, LoaderCircle, Monitor, Palette, Pin, RotateCcw, Save, Settings, ShieldCheck };
 
 export function icon(node: IconNode, size = 16): SVGElement {
   return createElement(node, { width: size, height: size, 'stroke-width': 1.75, 'aria-hidden': 'true', focusable: 'false' });

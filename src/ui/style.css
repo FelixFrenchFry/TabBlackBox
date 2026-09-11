@@ -60,10 +60,15 @@ details[open] > .backup-summary > svg { transform: rotate(0); }
 .window-heading .muted { font-weight: 400; font-size: 12px; }
 .tab-list { list-style: none; padding: 0; margin: 0; }
 .tab-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px solid var(--borderColor-muted); }
-.tab-row > svg { color: var(--fgColor-muted); }
-.tab-label { min-width: 0; flex: 1; display: flex; flex-direction: column; }
-.tab-title, .tab-url { overflow-wrap: anywhere; }
-.tab-url { color: var(--fgColor-muted); font-size: 12px; }
+.tab-label { min-width: 0; flex: 1; display: grid; grid-template-columns: 24px minmax(0, 1fr); column-gap: 8px; align-items: start; }
+.tab-favicon { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; color: var(--fgColor-muted); }
+.tab-favicon img { width: 16px; height: 16px; object-fit: contain; }
+.tab-open { grid-column: 1 / -1; min-width: 0; min-height: 24px; display: grid; grid-template-columns: 24px minmax(0, 1fr); column-gap: 8px; align-items: start; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--fgColor-muted); text-align: left; text-decoration: none; }
+.tab-open > svg { justify-self: center; margin-top: 4px; }
+.tab-open:hover:not(:disabled) { color: var(--fgColor-accent); background: var(--bgColor-muted); }
+.tab-open:hover:not(:disabled) .tab-url { text-decoration: underline; }
+.tab-title, .tab-url { overflow-wrap: anywhere; line-height: 24px; }
+.tab-url { color: inherit; font-size: 12px; }
 .group-label { border-radius: 4px; font-size: 12px; padding: 1px 6px; border: 1px solid var(--group-color, var(--borderColor-default)); max-width: 180px; overflow-wrap: anywhere; }
 .group-blue { --group-color: #388bfd; } .group-red { --group-color: #f85149; } .group-green { --group-color: #3fb950; } .group-yellow { --group-color: #d29922; } .group-purple { --group-color: #a371f7; } .group-pink { --group-color: #db61a2; } .group-cyan { --group-color: #39c5cf; } .group-orange { --group-color: #db6d28; }
 .unsupported { color: var(--fgColor-attention, #9a6700); }

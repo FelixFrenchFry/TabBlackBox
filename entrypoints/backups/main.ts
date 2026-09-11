@@ -70,6 +70,7 @@ let restoring = false;
 let backingUp = false;
 let operationKey = '';
 const restoreButtons = new Map<HTMLButtonElement, number>();
+const sessionRows = new Map<string, ReturnType<typeof row>>();
 
 function renderOperation(operation: Operation | null): void {
   const key = JSON.stringify(operation);
@@ -130,6 +131,28 @@ async function confirmRestore(snapshot: Snapshot, trigger: HTMLButtonElement): P
   cancel.focus();
 }
 
+function favicon(url: string | null): HTMLElement {
+  const frame = el('span', 'tab-favicon');
+  frame.setAttribute('aria-hidden', 'true');
+  const fallback = icon(url?.startsWith('file:') ? icons.FileText : icons.Globe);
+  if (restorableUrl(url) && url !== 'about:blank') {
+    // retrieve website icons through Chrome using the saved page URL
+    const source = new URL(chrome.runtime.getURL('/_favicon/'));
+    source.searchParams.set('pageUrl', url);
+    source.searchParams.set('size', '32');
+    const image = el('img');
+    image.alt = '';
+    image.width = 16;
+    image.height = 16;
+    image.loading = 'lazy';
+    image.decoding = 'async';
+    image.addEventListener('error', () => frame.replaceChildren(fallback), { once: true });
+    image.src = source.href;
+    frame.append(image);
+  } else frame.append(fallback);
+  return frame;
+}
+
 function preview(snapshot: Snapshot): HTMLElement {
   const content = el('div', 'snapshot-preview');
   for (const [index, window] of snapshot.windows.entries()) {
@@ -140,9 +163,25 @@ function preview(snapshot: Snapshot): HTMLElement {
     const tabs = el('ul', 'tab-list');
     for (const tab of window.tabs) {
       const item = el('li', 'tab-row');
-      item.append(icon(tab.pinned ? icons.Pin : icons.ArrowUpRight));
       const label = el('div', 'tab-label');
-      label.append(el('span', 'tab-title', tab.title || tab.url || 'Unavailable tab'), el('span', 'tab-url', tab.url ?? 'URL unavailable'));
+      const title = el('span', 'tab-title', tab.title || tab.url || 'Unavailable tab');
+      let open: HTMLAnchorElement | HTMLButtonElement;
+      // allow individual navigation for the same URL schemes supported by restoration
+      if (restorableUrl(tab.url)) {
+        open = el('a', 'tab-open');
+        open.href = tab.url;
+        open.target = '_blank';
+        open.rel = 'noopener noreferrer';
+        open.title = 'Open in new tab';
+        open.append(icon(icons.ArrowUpRight));
+      } else {
+        open = button('', icons.ArrowUpRight, 'tab-open');
+        open.disabled = true;
+        open.title = tab.url ? 'This URL cannot be opened from a saved session' : 'No saved URL is available';
+      }
+      open.setAttribute('aria-label', open.title);
+      open.append(el('span', 'tab-url', tab.url ?? 'URL unavailable'));
+      label.append(favicon(tab.url), title, open);
       item.append(label);
       if (tab.pinned) item.append(el('span', 'badge', 'Pinned'));
       if (tab.group !== null) {
@@ -158,7 +197,7 @@ function preview(snapshot: Snapshot): HTMLElement {
   return content;
 }
 
-function row(item: Summary): HTMLElement {
+function row(item: Summary) {
   const wrapper = el('article', 'backup-row');
   const details = el('details');
   const summary = el('summary', 'backup-summary');
@@ -190,7 +229,34 @@ function row(item: Summary): HTMLElement {
     restore.disabled = true;
     void load().then(value => confirmRestore(value, restore)).catch((error: unknown) => feedback.replaceChildren(notice(errorMessage(error)))).finally(() => { restore.disabled = !canRestore({ supportedCount: item.supportedCount, backingUp, restoring }); });
   });
-  return wrapper;
+  return { element: wrapper, details, restore };
+}
+
+function renderHistory(): void {
+  const ids = new Set(items.map(item => item.id));
+  for (const [id, saved] of sessionRows) {
+    if (ids.has(id)) continue;
+    saved.element.remove();
+    restoreButtons.delete(saved.restore);
+    sessionRows.delete(id);
+  }
+  if (!sessionRows.size) rows.replaceChildren();
+  // retain existing rows and previews while inserting new backups in order
+  let next = rows.firstElementChild;
+  for (const item of items) {
+    let saved = sessionRows.get(item.id);
+    if (!saved) {
+      saved = row(item);
+      sessionRows.set(item.id, saved);
+    }
+    if (saved.element === next) next = next.nextElementSibling;
+    else rows.insertBefore(saved.element, next);
+  }
+  if (!items.length) {
+    const empty = el('div', 'empty-state');
+    empty.append(icon(icons.Archive, 32), el('h2', '', 'Your backup history starts here'), el('p', 'muted', 'Open some tabs and choose Back up now. Future changes will be saved automatically.'));
+    rows.append(empty);
+  }
 }
 
 async function loadHistory(reset: boolean): Promise<void> {
@@ -201,15 +267,23 @@ async function loadHistory(reset: boolean): Promise<void> {
     const data = await request({ kind: 'history', before: last ? { capturedAt: last.capturedAt, id: last.id } : null });
     if (generation !== historyGeneration) return;
     if (data.kind !== 'history') throw new Error('Unexpected history response.');
-    if (reset) { items = []; restoreButtons.clear(); rows.replaceChildren(); }
-    items.push(...data.items);
-    for (const item of data.items) rows.append(row(item));
-    if (!items.length) {
-      const empty = el('div', 'empty-state');
-      empty.append(icon(icons.Archive, 32), el('h2', '', 'Your backup history starts here'), el('p', 'muted', 'Open some tabs and choose Back up now. Future changes will be saved automatically.'));
-      rows.append(empty);
+    let page = data.items;
+    const loaded = [...page];
+    // refresh through the oldest expanded session before updating the visible list
+    while (reset && page.length === 50) {
+      const oldestOpen = items.findLast(item => sessionRows.get(item.id)?.details.open);
+      const end = loaded.at(-1);
+      if (!oldestOpen || !end || end.capturedAt < oldestOpen.capturedAt || (end.capturedAt === oldestOpen.capturedAt && end.id <= oldestOpen.id)) break;
+      const older = await request({ kind: 'history', before: { capturedAt: end.capturedAt, id: end.id } });
+      if (generation !== historyGeneration) return;
+      if (older.kind !== 'history') throw new Error('Unexpected history response.');
+      page = older.items;
+      loaded.push(...page);
     }
-    more.hidden = data.items.length < 50;
+    if (reset) items = loaded;
+    else items.push(...loaded);
+    renderHistory();
+    more.hidden = page.length < 50;
   } catch (error) {
     if (generation === historyGeneration) throw error;
   } finally {
