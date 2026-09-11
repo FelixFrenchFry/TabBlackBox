@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 FRONT_WIDTH = 650
 FRONT_HEIGHT = 620
 ORIGINAL_DEPTH = (190, -165)
-BORDER = 54  # 25% thinner than the original 72-unit frame
+BORDER = 54
 OUTER_RADIUS = 100
 INNER_RADIUS = OUTER_RADIUS - BORDER
 
@@ -86,7 +86,7 @@ def rounded_polygon(vertices, radii):
 DEPTH_SCALE = 0.75
 DEPTH = tuple(component * DEPTH_SCALE for component in ORIGINAL_DEPTH)
 CORNER_OVERLAP = 4
-# Slightly tighter grey corners extend just beyond the black at the two junctions.
+# slightly tighter grey corners extend past the black at both junctions
 DEPTH_RADII = [OUTER_RADIUS - CORNER_OVERLAP, OUTER_RADIUS,
                OUTER_RADIUS - CORNER_OVERLAP, OUTER_RADIUS]
 
@@ -160,7 +160,7 @@ def inset_polygon(vertices, distance):
 
 
 def main():
-    # Solve the shared face slope against the actual rounded outline's AABB.
+    # solve the shared face slope against the rounded outline bounds
     low, high = 0.088, 0.3
     for _ in range(50):
         slope = (low + high) / 2
@@ -229,8 +229,8 @@ def main():
     ]
     panels = []
     for face in faces:
-        # Depth faces are foreshortened: a full front-face inset leaves a slit.
-        # Half the inset makes these read as white faces with outlined edges.
+        # depth faces use a foreshortened inset to avoid a slit
+        # half the inset leaves white faces with outlined edges
         path, _ = rounded_polygon(inset_polygon(face, BORDER / 2), [16] * 4)
         panels.append(normalize_path(path, x, y, 1024 / width))
     outlined = monochrome.replace('TabBlackBox logo', 'TabBlackBox outlined planes logo')

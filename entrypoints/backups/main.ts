@@ -3,6 +3,7 @@ import { restorableUrl } from '../../src/session';
 import { canRestore } from '../../src/ui/restore-state';
 import { setup, brand, button, icons, icon, el, request, statusView, notice, formatTime, plural } from '../../src/ui/shared';
 import { createRefreshQueue } from '../../src/ui/refresh-queue';
+import { createSettingsView } from '../../src/ui/settings';
 
 const root = setup();
 const header = el('header', 'app-header');
@@ -12,10 +13,13 @@ header.append(headerInner);
 const nav = el('nav', 'navigation');
 nav.setAttribute('aria-label', 'Main navigation');
 const active = el('a', 'nav-item active', 'Backup history');
-active.href = './backups.html';
+active.href = '#history';
 active.setAttribute('aria-current', 'page');
 active.prepend(icon(icons.History));
-nav.append(active);
+const settingsLink = el('a', 'nav-item', 'Settings');
+settingsLink.href = '#settings';
+settingsLink.prepend(icon(icons.Settings));
+nav.append(active, settingsLink);
 const main = el('main', 'history-main');
 const heading = el('div', 'page-heading');
 const titles = el('div');
@@ -42,7 +46,22 @@ list.append(listHeader, rows);
 const footer = el('footer', 'history-footer');
 footer.append(icon(icons.HardDrive), el('span', '', 'Saved on this device · Last 24 hours and at least 200 recent backups, within storage capacity.'));
 main.append(heading, status, feedback, operationRegion, list, more, footer);
-root.append(header, nav, main);
+const settings = createSettingsView();
+root.append(header, nav, main, settings.element);
+
+function showView(): void {
+  const isSettings = location.hash === '#settings';
+  main.hidden = isSettings;
+  settings.element.hidden = !isSettings;
+  for (const [link, selected] of [[active, !isSettings], [settingsLink, isSettings]] as const) {
+    link.classList.toggle('active', selected);
+    if (selected) link.setAttribute('aria-current', 'page');
+    else link.removeAttribute('aria-current');
+  }
+  document.title = `${isSettings ? 'Settings' : 'Backup history'} · TabBlackBox`;
+}
+window.addEventListener('hashchange', showView);
+showView();
 
 let items: Summary[] = [];
 let historyGeneration = 0;
@@ -209,6 +228,7 @@ function updateRestoreButtons(): void {
 }
 
 function applyOverview(overview: Overview): void {
+  settings.update(overview);
   status.replaceChildren(statusView(overview));
   count.textContent = String(overview.metadata.count);
   restoring = overview.status.kind === 'restoring';
@@ -229,7 +249,10 @@ const refresh = createRefreshQueue(async kind => {
       feedback.replaceChildren();
     }
     if (kind === 'backup') feedback.replaceChildren(el('p', 'muted', data.overview.status.kind === 'current' ? 'Current session is saved. Identical backups are kept only once.' : data.overview.status.kind === 'pending' ? 'Tabs changed during capture. Automatic backup will retry.' : ''));
-  } catch (error) { feedback.replaceChildren(notice(errorMessage(error))); }
+  } catch (error) {
+    feedback.replaceChildren(notice(errorMessage(error)));
+    settings.showError(errorMessage(error));
+  }
 }, value => { backingUp = value; updateSave(); updateRestoreButtons(); });
 save.addEventListener('click', () => { void refresh('backup'); });
 more.addEventListener('click', () => {

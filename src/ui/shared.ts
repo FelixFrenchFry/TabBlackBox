@@ -1,9 +1,10 @@
-import { createElement, Archive, ArrowUpRight, Check, ChevronDown, CircleAlert, Clock3, HardDrive, History, LoaderCircle, Monitor, Pin, RotateCcw, Save, ShieldCheck, type IconNode } from 'lucide';
+import { createElement, Archive, ArrowUpRight, Check, ChevronDown, CircleAlert, Clock3, HardDrive, History, LoaderCircle, Monitor, Palette, Pin, RotateCcw, Save, Settings, ShieldCheck, type IconNode } from 'lucide';
 import type { Data, Reply, Request } from '../protocol';
 import type { Overview } from '../model';
+import { initializeAppearance } from './appearance';
 import './style.css';
 
-export const icons = { Archive, ArrowUpRight, Check, ChevronDown, CircleAlert, Clock3, HardDrive, History, LoaderCircle, Monitor, Pin, RotateCcw, Save, ShieldCheck };
+export const icons = { Archive, ArrowUpRight, Check, ChevronDown, CircleAlert, Clock3, HardDrive, History, LoaderCircle, Monitor, Palette, Pin, RotateCcw, Save, Settings, ShieldCheck };
 
 export function icon(node: IconNode, size = 16): SVGElement {
   return createElement(node, { width: size, height: size, 'stroke-width': 1.75, 'aria-hidden': 'true', focusable: 'false' });
@@ -31,14 +32,7 @@ export async function request(message: Request): Promise<Data> {
 }
 
 export function setup(): HTMLElement {
-  const match = matchMedia('(prefers-color-scheme: dark)');
-  const theme = () => {
-    document.documentElement.dataset.colorMode = match.matches ? 'dark' : 'light';
-    document.documentElement.dataset.lightTheme = 'light';
-    document.documentElement.dataset.darkTheme = 'dark';
-  };
-  theme();
-  match.addEventListener('change', theme);
+  initializeAppearance();
   const root = document.getElementById('app');
   if (!root) throw new Error('Application root is missing.');
   return root;

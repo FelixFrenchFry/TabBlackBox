@@ -4,7 +4,12 @@ import { createRefreshQueue } from '../../src/ui/refresh-queue';
 
 const root = setup();
 const header = el('header', 'popup-header');
-header.append(brand(), el('span', 'badge', 'Local'));
+const headerActions = el('div', 'popup-header-actions');
+const settings = button('', icons.Settings, 'button icon-button');
+settings.setAttribute('aria-label', 'Settings');
+settings.title = 'Settings';
+headerActions.append(el('span', 'badge', 'Local'), settings);
+header.append(brand(), headerActions);
 const content = el('main', 'popup-content');
 const status = el('div', 'status-region');
 const feedback = el('div');
@@ -39,5 +44,6 @@ const refresh = createRefreshQueue(async kind => {
 }, value => { backingUp = value; updateSave(); });
 save.addEventListener('click', () => { void refresh('backup'); });
 history.addEventListener('click', () => { void chrome.tabs.create({ url: chrome.runtime.getURL('/backups.html') }); });
+settings.addEventListener('click', () => { void chrome.tabs.create({ url: chrome.runtime.getURL('/backups.html#settings') }); });
 void refresh('refresh');
 setInterval(() => { void refresh('overview'); }, 1500);

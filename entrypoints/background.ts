@@ -57,7 +57,7 @@ export default defineBackground(() => {
   }
 
   chrome.runtime.onMessage.addListener((input: unknown, sender, sendResponse: (reply: Reply) => void) => {
-    if (sender.id !== chrome.runtime.id || ![chrome.runtime.getURL('/popup.html'), chrome.runtime.getURL('/backups.html')].includes(sender.url ?? '')) return false;
+    if (sender.id !== chrome.runtime.id || ![chrome.runtime.getURL('/popup.html'), chrome.runtime.getURL('/backups.html')].includes(sender.url?.split('#')[0] ?? '')) return false;
     void handle(input).then(data => sendResponse({ ok: true, data }), (error: unknown) => sendResponse({ ok: false, error: errorMessage(error) }));
     return true;
   });

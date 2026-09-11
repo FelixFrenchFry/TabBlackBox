@@ -19,6 +19,7 @@ export async function restoreSession(snapshot: Snapshot, port: RestorePort, pers
   const save = () => persist({ ...progress, errors: [...progress.errors], kind: 'running' });
   await save();
 
+  // restore windows in saved order and persist progress after each operation
   for (const [windowIndex, window] of snapshot.windows.entries()) {
     const tabs = window.tabs.filter((tab): tab is typeof tab & { url: string } => restorableUrl(tab.url));
     const first = tabs[0];
@@ -52,7 +53,7 @@ export async function restoreSession(snapshot: Snapshot, port: RestorePort, pers
         progress.failed++;
         recordError(`Window ${windowIndex + 1}, ${tab.title || tab.url}: ${errorMessage(error)}`);
       }
-      // Persistence errors must escape, not be mistaken for a failed browser call.
+      // let persistence errors escape instead of treating them as browser failures
       await save();
     }
     for (const [index, tabIds] of grouped) {

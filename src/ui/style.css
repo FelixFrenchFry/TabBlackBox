@@ -3,9 +3,10 @@
 @import '@primer/primitives/dist/css/functional/typography/typography.css';
 
 :root { font-family: var(--fontStack-sansSerif); font-size: 14px; color: var(--fgColor-default); background: var(--bgColor-default); line-height: 1.5; }
+.app-page { scrollbar-gutter: stable; }
 * { box-sizing: border-box; }
 body { margin: 0; font: inherit; }
-button, input { font: inherit; }
+button, input, select { font: inherit; }
 button, a, summary { -webkit-tap-highlight-color: transparent; }
 button { cursor: pointer; }
 button:disabled { opacity: .55; cursor: default; }
@@ -80,6 +81,22 @@ details[open] > .backup-summary > svg { transform: rotate(0); }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 24px; }
 .popup { width: 380px; }
 .popup-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--borderColor-muted); background: var(--bgColor-muted); }
+.popup-header-actions { display: flex; align-items: center; gap: 12px; }
+.icon-button { width: 32px; padding: 5px; }
+.settings-card { border: 1px solid var(--borderColor-default); border-radius: 6px; margin-bottom: 16px; overflow: hidden; }
+.settings-card > .list-header { font-size: 14px; font-weight: 700; border-bottom: 1px solid var(--borderColor-muted); }
+.settings-body { padding: 16px; }
+.settings-body > :first-child { margin-top: 0; }
+.settings-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 12px; }
+.settings-select-control { position: relative; flex-shrink: 0; }
+.settings-select-control > svg { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); pointer-events: none; }
+.settings-select { appearance: none; width: 160px; min-height: 34px; padding: 6px 40px 6px 12px; text-align: left; text-align-last: left; color: var(--fgColor-default); background: var(--bgColor-muted); border: 1px solid var(--borderColor-default); border-radius: 6px; cursor: pointer; }
+.settings-card .status-card { margin: 12px 0 0; padding: 14px 16px; }
+.settings-card .status-times { margin-top: 8px; }
+.storage-meter { appearance: none; display: block; width: 100%; height: 10px; margin: 12px 0; border: 0; border-radius: 5px; overflow: hidden; background: var(--borderColor-muted); }
+.storage-meter::-webkit-progress-bar { background: var(--borderColor-muted); border-radius: inherit; }
+.storage-meter::-webkit-progress-value { background: var(--fgColor-accent); border-radius: inherit; }
+.storage-meter::-moz-progress-bar { background: var(--fgColor-accent); border-radius: inherit; }
 .popup-content { padding: 20px; }
 .popup .status-card { border: 0; padding: 0; margin-bottom: 20px; }
 .popup .status-times { flex-direction: column; gap: 3px; }
