@@ -1,6 +1,7 @@
-"""Generate the default and two-color SVG logos: python -B scripts/generate_logo.py."""
+"""Generate white-inset SVG logos; run node scripts/render-logo.mjs for PNGs."""
 
 import math
+import re
 from pathlib import Path
 
 
@@ -8,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 FRONT_WIDTH = 650
 FRONT_HEIGHT = 620
 ORIGINAL_DEPTH = (190, -165)
-BORDER = 72  # perpendicular distance between each pair of straight frame edges
+BORDER = 54  # 25% thinner than the original 72-unit frame
 OUTER_RADIUS = 100
 INNER_RADIUS = OUTER_RADIUS - BORDER
 
@@ -19,6 +20,23 @@ def fmt(value):
 
 def xy(p):
     return " ".join(fmt(v) for v in p)
+
+
+def normalize_path(path, left, top, scale):
+    """Write actual 1024-canvas coordinates, without an SVG transform wrapper."""
+    def command(match):
+        kind = match.group(1)
+        values = [float(value) for value in match.group(2).split()]
+        if kind == 'A':
+            values[0] *= scale
+            values[1] *= scale
+            values[5] = (values[5] - left) * scale
+            values[6] = (values[6] - top) * scale
+        else:
+            values[0] = (values[0] - left) * scale
+            values[1] = (values[1] - top) * scale
+        return f'{kind} {" ".join(fmt(value) for value in values)}\n    '
+    return re.sub(r'([MLA])\s+([^MLAZ]+)', command, path)
 
 
 def rounded_polygon(vertices, radii):
@@ -121,6 +139,26 @@ def face_geometry(slope):
     return front, (left, top, right, bottom)
 
 
+def inset_polygon(vertices, distance):
+    """Inset a convex face by a constant perpendicular distance on each edge."""
+    area = sum(a[0] * b[1] - b[0] * a[1]
+               for a, b in zip(vertices, vertices[1:] + vertices[:1]))
+    direction = 1 if area > 0 else -1
+    lines = []
+    for a, b in zip(vertices, vertices[1:] + vertices[:1]):
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        length = math.hypot(dx, dy)
+        normal = (-dy / length * direction, dx / length * direction)
+        lines.append((normal, normal[0] * a[0] + normal[1] * a[1] + distance))
+    result = []
+    for i, (b, cb) in enumerate(lines):
+        a, ca = lines[i - 1]
+        determinant = a[0] * b[1] - b[0] * a[1]
+        result.append(((ca * b[1] - cb * a[1]) / determinant,
+                       (a[0] * cb - b[0] * ca) / determinant))
+    return result
+
+
 def main():
     # Solve the shared face slope against the actual rounded outline's AABB.
     low, high = 0.088, 0.3
@@ -147,33 +185,71 @@ def main():
          point(325, 377), point(190, 480)], [22, 22, 10, 8, 10])
     width = height = max(right - left, bottom - top)
     x, y = (left + right - width) / 2, (top + bottom - height) / 2
-    view_box = ' '.join(fmt(v) for v in (x, y, width, height))
-    svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="{view_box}" fill="none">
+    black_frame, shell, opening, bookmark = [normalize_path(path, x, y, 1024 / width)
+                                            for path in (black_frame, shell, opening, bookmark)]
+    view_box = '0 0 1024 1024'
+    svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="{view_box}" fill="none">
   <title>TabBlackBox two-color logo</title>
-  <desc>A black rounded front frame with dark grey depth and a subtle corner overlap. The shared face angle gives a square silhouette. The black frame is 72 units thick on all four straight sides. The opening remains transparent.</desc>
+  <desc>A black rounded frame with dark grey depth, a solid white opening, and a black bookmark. The frame is 25 percent thinner than the original. The canvas outside the silhouette is transparent.</desc>
   <defs>
-    <pattern id="depth-colors" patternUnits="userSpaceOnUse" x="{x}" y="{y}" width="{width}" height="{height}" viewBox="{view_box}">
-      <rect id="dark-grey-depth" x="{x}" y="{y}" width="{width}" height="{height}" fill="#646464"/>
+    <pattern id="depth-colors" patternUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024" viewBox="{view_box}">
+      <rect id="dark-grey-depth" width="1024" height="1024" fill="#646464"/>
       <path id="black-frame" fill="#0A0A0A" d="{black_frame}"/>
     </pattern>
   </defs>
-  <path id="box" fill="url(#depth-colors)" fill-rule="evenodd" d="{shell} {opening}"/>
+  <path id="box" fill="url(#depth-colors)" d="{shell}"/>
+  <path id="opening" fill="#FFFFFF" d="{opening}"/>
   <path id="bookmark" fill="#0A0A0A" d="{bookmark}"/>
 </svg>
 '''
     destination = ROOT / 'assets/logo/tabblackbox-stacked.svg'
     destination.write_text(svg, encoding='utf-8', newline='\n')
-    monochrome = f'''<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="{view_box}" fill="none">
-  <title>TabBlackBox all-black logo</title>
-  <desc>The same short-depth silhouette and transparent opening as the two-color logo, entirely in black.</desc>
-  <path id="box" fill="#0A0A0A" fill-rule="evenodd" d="{shell} {opening}"/>
+    orange = f'''<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="{view_box}" fill="none">
+  <title>TabBlackBox orange logo</title>
+  <desc>A uniform orange frame, depth, and bookmark with a solid white opening. The frame is 25 percent thinner than the original. The canvas outside the silhouette is transparent.</desc>
+  <path id="box" fill="#F04600" d="{shell}"/>
+  <path id="opening" fill="#FFFFFF" d="{opening}"/>
+  <path id="bookmark" fill="#F04600" d="{bookmark}"/>
+</svg>
+'''
+    (ROOT / 'assets/logo/tabblackbox-orange.svg').write_text(orange, encoding='utf-8', newline='\n')
+    monochrome = f'''<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="{view_box}" fill="none">
+  <title>TabBlackBox logo</title>
+  <desc>A black silhouette and bookmark with a solid white opening. The frame is 25 percent thinner than the original. The canvas outside the silhouette is transparent.</desc>
+  <path id="box" fill="#0A0A0A" d="{shell}"/>
+  <path id="opening" fill="#FFFFFF" d="{opening}"/>
   <path id="bookmark" fill="#0A0A0A" d="{bookmark}"/>
 </svg>
 '''
     (ROOT / 'assets/logo/tabblackbox.svg').write_text(monochrome, encoding='utf-8', newline='\n')
+    back = lambda p: (p[0] + DEPTH[0], p[1] + DEPTH[1])
+    faces = [
+        [front[0], back(front[0]), back(front[1]), front[1]],
+        [front[1], back(front[1]), back(front[2]), front[2]],
+    ]
+    panels = []
+    for face in faces:
+        # Depth faces are foreshortened: a full front-face inset leaves a slit.
+        # Half the inset makes these read as white faces with outlined edges.
+        path, _ = rounded_polygon(inset_polygon(face, BORDER / 2), [16] * 4)
+        panels.append(normalize_path(path, x, y, 1024 / width))
+    outlined = monochrome.replace('TabBlackBox logo', 'TabBlackBox outlined planes logo')
+    outlined = outlined.replace('A black silhouette and bookmark with a solid white opening.',
+                                'A black silhouette and bookmark with white inset panels on the front, top, and right faces.')
+    outlined = outlined.replace('  <path id="opening"',
+                                f'  <defs><mask id="outline-boundary" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">\n'
+                                f'  <path fill="#FFFFFF" d="{shell}"/>\n'
+                                f'  <path fill="none" stroke="#000000" stroke-width="{fmt(BORDER * 1024 / width)}" d="{shell}"/>\n'
+                                '  </mask></defs>\n'
+                                '  <g mask="url(#outline-boundary)">\n'
+                                f'  <path id="top-opening" fill="#FFFFFF" d="{panels[0]}"/>\n'
+                                f'  <path id="right-opening" fill="#FFFFFF" d="{panels[1]}"/>\n'
+                                '  </g>\n'
+                                '  <path id="opening"')
+    (ROOT / 'assets/logo/tabblackbox-outlined.svg').write_text(outlined, encoding='utf-8', newline='\n')
     print(f'Extruded AABB: {right-left:.3f} x {bottom-top:.3f}; square viewBox: {view_box}')
     print(f'Face angle: {math.degrees(math.atan(slope)):.4f} degrees; grey corner radius reduction: {CORNER_OVERLAP} units')
-    print(f'Black border on all four straight sides: {BORDER} units, {BORDER / width * 16:.3f} px at 16 px')
+    print(f'Frame thickness: {BORDER / width * 1024:.3f} normalized units, {BORDER / width * 16:.3f} px at 16 px')
     print(destination)
 
 
