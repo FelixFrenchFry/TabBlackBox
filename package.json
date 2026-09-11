@@ -1,0 +1,32 @@
+{
+  "name": "tabblackbox",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wxt",
+    "build": "wxt build",
+    "zip": "wxt zip",
+    "postinstall": "wxt prepare",
+    "typecheck": "tsc --noEmit",
+    "pretest": "wxt build",
+    "test": "vitest run",
+    "test:install-browser": "node scripts/install-test-browser.mjs",
+    "pretest:e2e": "wxt build",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "@primer/primitives": "^11.10.0",
+    "idb": "^8.0.3",
+    "lucide": "^1.44.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@types/chrome": "^0.2.9",
+    "@types/node": "^22.20.2",
+    "fake-indexeddb": "^6.2.5",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.0",
+    "wxt": "^0.21.4"
+  }
+}
