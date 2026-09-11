@@ -1,5 +1,5 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
-import type { CaptureResult, Metadata, Operation, Session, Snapshot, Source, Summary } from './model';
+import type { CaptureResult, HistoryCursor, Metadata, Operation, Session, Snapshot, Source, Summary } from './model';
 import { BYTE_BUDGET, canonicalSession, retainedIds, summarize } from './session';
 
 interface BackupDatabase extends DBSchema {
@@ -44,14 +44,15 @@ export class Repository {
     return snapshot;
   }
 
-  async list(offset = 0, limit = 50): Promise<Summary[]> {
+  async list(before: HistoryCursor | null = null, limit = 50): Promise<Summary[]> {
     const db = await this.db();
     const transaction = db.transaction('summaries');
-    let cursor = await transaction.store.index('capturedAt').openCursor(null, 'prev');
-    if (cursor && offset) cursor = await cursor.advance(offset);
+    const range = before ? IDBKeyRange.upperBound(before.capturedAt) : null;
+    let cursor = await transaction.store.index('capturedAt').openCursor(range, 'prev');
     const result: Summary[] = [];
     while (cursor && result.length < limit) {
-      result.push(cursor.value);
+      // use the primary key to break timestamp ties after the anchor is pruned
+      if (!before || cursor.key < before.capturedAt || cursor.primaryKey < before.id) result.push(cursor.value);
       cursor = await cursor.continue();
     }
     await transaction.done;
@@ -60,6 +61,7 @@ export class Repository {
 
   async capture(session: Session, source: Source, now: number): Promise<CaptureResult> {
     const db = await this.db();
+    // update snapshots, summaries, and metadata in one transaction
     const tx = db.transaction(['snapshots', 'summaries', 'metadata'], 'readwrite');
     try {
       const metadata = (await tx.objectStore('metadata').get('state')) ?? initialMetadata();
@@ -93,7 +95,7 @@ export class Repository {
       await tx.done;
       return result;
     } catch (error) {
-      try { tx.abort(); } catch { /* The failed request may already have aborted it. */ }
+      try { tx.abort(); } catch { /* abort may already have happened on the failed request */ }
       await tx.done.catch(() => undefined);
       throw error;
     }

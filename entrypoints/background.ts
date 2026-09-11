@@ -1,12 +1,12 @@
 import { defineBackground } from 'wxt/utils/define-background';
 import { Repository } from '../src/database';
-import { Controller } from '../src/controller';
+import { BackupBusyError, Controller } from '../src/controller';
 import { scanBrowser, restoreBrowser } from '../src/browser';
 import { errorMessage } from '../src/model';
 import { parseRequest, type Data, type Reply } from '../src/protocol';
 
 export default defineBackground(() => {
-  const controller = new Controller(new Repository(), scanBrowser, restoreBrowser);
+  const controller = new Controller(new Repository(), scanBrowser, restoreBrowser, () => { void badge(); });
   const changed = () => controller.changed();
   const alarmName = 'reconcile-session';
 
@@ -32,20 +32,23 @@ export default defineBackground(() => {
   chrome.tabGroups.onMoved.addListener(changed);
   chrome.tabGroups.onRemoved.addListener(changed);
   chrome.alarms.onAlarm.addListener(alarm => {
-    if (alarm.name === alarmName) void controller.capture('automatic').then(badge);
+    if (alarm.name === alarmName) void controller.capture('automatic').then(badge, badge);
   });
 
   async function handle(input: unknown): Promise<Data> {
     const request = parseRequest(input);
-    await controller.start();
     switch (request.kind) {
       case 'overview': return { kind: 'overview', overview: await controller.overview() };
       case 'refresh':
       case 'backup':
-        await controller.capture(request.kind === 'backup' ? 'manual' : 'automatic');
+        try { await controller.capture(request.kind === 'backup' ? 'manual' : 'automatic'); }
+        catch (error) {
+          if (error instanceof BackupBusyError) throw error;
+          // return the error status and saved history after startup recovery fails
+        }
         await badge();
         return { kind: 'overview', overview: await controller.overview() };
-      case 'history': return { kind: 'history', items: await controller.repository.list(request.offset) };
+      case 'history': return { kind: 'history', items: await controller.repository.list(request.before) };
       case 'snapshot': return { kind: 'snapshot', snapshot: await controller.repository.get(request.id) };
       case 'restore':
         await controller.restore(request.id);
@@ -60,8 +63,8 @@ export default defineBackground(() => {
   });
 
   async function initialize(): Promise<void> {
-    await controller.start();
     if (!await chrome.alarms.get(alarmName)) await chrome.alarms.create(alarmName, { periodInMinutes: 1 });
+    await controller.start();
     await badge();
   }
   void initialize().catch((error: unknown) => { controller.status = { kind: 'error', message: errorMessage(error) }; void badge(); });

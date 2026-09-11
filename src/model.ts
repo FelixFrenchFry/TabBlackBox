@@ -8,6 +8,7 @@ export type Snapshot = Session & { id: string; schemaVersion: 1; capturedAt: num
 export type Summary = Pick<Snapshot, 'id' | 'capturedAt' | 'source'> & {
   windowCount: number; tabCount: number; supportedCount: number; bytes: number;
 };
+export type HistoryCursor = Pick<Summary, 'capturedAt' | 'id'>;
 export type RestoreProgress = {
   snapshotId: string; startedAt: number; opened: number; skipped: number; failed: number;
   groupErrors: number; total: number; errors: string[];

@@ -1,6 +1,8 @@
 import { errorMessage, type Operation, type Overview, type Snapshot, type Summary } from '../../src/model';
 import { restorableUrl } from '../../src/session';
+import { canRestore } from '../../src/ui/restore-state';
 import { setup, brand, button, icons, icon, el, request, statusView, notice, formatTime, plural } from '../../src/ui/shared';
+import { createRefreshQueue } from '../../src/ui/refresh-queue';
 
 const root = setup();
 const header = el('header', 'app-header');
@@ -18,7 +20,10 @@ const main = el('main', 'history-main');
 const heading = el('div', 'page-heading');
 const titles = el('div');
 titles.append(el('h1', '', 'Backup history'), el('p', 'muted', 'Pick up where you left off. Restore a saved session in new windows.'));
-const save = button('Back up now', icons.Save, 'button primary');
+const save = el('button', 'button primary');
+save.type = 'button';
+const saveLabel = document.createTextNode('Back up now');
+save.append(icon(icons.Save), saveLabel);
 heading.append(titles, save);
 const status = el('div');
 const feedback = el('div');
@@ -40,11 +45,12 @@ main.append(heading, status, feedback, operationRegion, list, more, footer);
 root.append(header, nav, main);
 
 let items: Summary[] = [];
+let historyGeneration = 0;
 let latestId: string | null = null;
 let restoring = false;
-let polling = false;
+let backingUp = false;
 let operationKey = '';
-const restoreButtons = new Set<HTMLButtonElement>();
+const restoreButtons = new Map<HTMLButtonElement, number>();
 
 function renderOperation(operation: Operation | null): void {
   const key = JSON.stringify(operation);
@@ -69,7 +75,7 @@ function renderOperation(operation: Operation | null): void {
 }
 
 async function confirmRestore(snapshot: Snapshot, trigger: HTMLButtonElement): Promise<void> {
-  if (restoring) return;
+  if (restoring || backingUp) return;
   const tabs = snapshot.windows.flatMap(window => window.tabs);
   const supported = tabs.filter(tab => restorableUrl(tab.url)).length;
   const windows = snapshot.windows.filter(window => window.tabs.some(tab => restorableUrl(tab.url))).length;
@@ -94,8 +100,8 @@ async function confirmRestore(snapshot: Snapshot, trigger: HTMLButtonElement): P
       try {
         await request({ kind: 'restore', id: snapshot.id });
         restoring = true;
-        for (const button of restoreButtons) button.disabled = true;
-        save.disabled = true;
+        updateRestoreButtons();
+        updateSave();
         dialog.close();
         await refresh('overview');
       } catch (error) { dialog.append(notice(errorMessage(error))); confirm.disabled = false; }
@@ -142,9 +148,9 @@ function row(item: Summary): HTMLElement {
   summary.append(icon(icons.ChevronDown), label, el('span', 'badge', item.source === 'manual' ? 'Manual' : 'Automatic'));
   details.append(summary);
   const restore = button('Restore', icons.RotateCcw, 'button small');
-  restore.disabled = restoring || item.supportedCount === 0;
+  restore.disabled = !canRestore({ supportedCount: item.supportedCount, backingUp, restoring });
   if (!item.supportedCount) restore.title = 'This backup has no supported tabs to restore.';
-  restoreButtons.add(restore);
+  restoreButtons.set(restore, item.supportedCount);
   wrapper.append(details, restore);
   let snapshot: Snapshot | undefined;
   async function load(): Promise<Snapshot> {
@@ -163,37 +169,56 @@ function row(item: Summary): HTMLElement {
   });
   restore.addEventListener('click', () => {
     restore.disabled = true;
-    void load().then(value => confirmRestore(value, restore)).catch((error: unknown) => feedback.replaceChildren(notice(errorMessage(error)))).finally(() => { restore.disabled = restoring || item.supportedCount === 0; });
+    void load().then(value => confirmRestore(value, restore)).catch((error: unknown) => feedback.replaceChildren(notice(errorMessage(error)))).finally(() => { restore.disabled = !canRestore({ supportedCount: item.supportedCount, backingUp, restoring }); });
   });
   return wrapper;
 }
 
 async function loadHistory(reset: boolean): Promise<void> {
-  const data = await request({ kind: 'history', offset: reset ? 0 : items.length });
-  if (data.kind !== 'history') throw new Error('Unexpected history response.');
-  if (reset) { items = []; restoreButtons.clear(); rows.replaceChildren(); }
-  items.push(...data.items);
-  for (const item of data.items) rows.append(row(item));
-  if (!items.length) {
-    const empty = el('div', 'empty-state');
-    empty.append(icon(icons.Archive, 32), el('h2', '', 'Your backup history starts here'), el('p', 'muted', 'Open some tabs and choose Back up now. Future changes will be saved automatically.'));
-    rows.append(empty);
+  const generation = reset ? ++historyGeneration : historyGeneration;
+  const last = reset ? undefined : items.at(-1);
+  more.disabled = true;
+  try {
+    const data = await request({ kind: 'history', before: last ? { capturedAt: last.capturedAt, id: last.id } : null });
+    if (generation !== historyGeneration) return;
+    if (data.kind !== 'history') throw new Error('Unexpected history response.');
+    if (reset) { items = []; restoreButtons.clear(); rows.replaceChildren(); }
+    items.push(...data.items);
+    for (const item of data.items) rows.append(row(item));
+    if (!items.length) {
+      const empty = el('div', 'empty-state');
+      empty.append(icon(icons.Archive, 32), el('h2', '', 'Your backup history starts here'), el('p', 'muted', 'Open some tabs and choose Back up now. Future changes will be saved automatically.'));
+      rows.append(empty);
+    }
+    more.hidden = data.items.length < 50;
+  } catch (error) {
+    if (generation === historyGeneration) throw error;
+  } finally {
+    if (generation === historyGeneration) more.disabled = false;
   }
-  more.hidden = data.items.length < 50;
+}
+
+function updateSave(): void {
+  save.disabled = backingUp || restoring;
+  const label = backingUp ? 'Backing up…' : 'Back up now';
+  if (saveLabel.data !== label) saveLabel.data = label;
+}
+
+function updateRestoreButtons(): void {
+  for (const [button, supportedCount] of restoreButtons) button.disabled = !canRestore({ supportedCount, backingUp, restoring });
 }
 
 function applyOverview(overview: Overview): void {
   status.replaceChildren(statusView(overview));
   count.textContent = String(overview.metadata.count);
   restoring = overview.status.kind === 'restoring';
-  save.disabled = restoring;
-  for (const button of restoreButtons) button.disabled = restoring || button.title !== '';
+  updateSave();
+  updateRestoreButtons();
   renderOperation(overview.metadata.operation);
 }
 
-async function refresh(kind: 'overview' | 'refresh' | 'backup'): Promise<void> {
-  if (polling) return;
-  polling = true;
+const refresh = createRefreshQueue(async kind => {
+  if (kind === 'backup') feedback.replaceChildren();
   try {
     const data = await request({ kind });
     if (data.kind !== 'overview') throw new Error('Unexpected background response.');
@@ -205,12 +230,10 @@ async function refresh(kind: 'overview' | 'refresh' | 'backup'): Promise<void> {
     }
     if (kind === 'backup') feedback.replaceChildren(el('p', 'muted', data.overview.status.kind === 'current' ? 'Current session is saved. Identical backups are kept only once.' : data.overview.status.kind === 'pending' ? 'Tabs changed during capture. Automatic backup will retry.' : ''));
   } catch (error) { feedback.replaceChildren(notice(errorMessage(error))); }
-  finally { polling = false; }
-}
+}, value => { backingUp = value; updateSave(); updateRestoreButtons(); });
 save.addEventListener('click', () => { void refresh('backup'); });
 more.addEventListener('click', () => {
-  more.disabled = true;
-  void loadHistory(false).catch((error: unknown) => feedback.replaceChildren(notice(errorMessage(error)))).finally(() => { more.disabled = false; });
+  void loadHistory(false).catch((error: unknown) => feedback.replaceChildren(notice(errorMessage(error))));
 });
 void refresh('refresh');
 setInterval(() => { if (!document.hidden) void refresh('overview'); }, 1500);
