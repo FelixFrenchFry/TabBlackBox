@@ -44,6 +44,7 @@ export default defineBackground(() =>
     const request = parseRequest(input);
     switch (request.kind) {
       case 'overview': return { kind: 'overview', overview: await controller.overview() };
+      case 'storage-settings': return { kind: 'storage-settings', result: await controller.setStorageSettings(request.settings, request.confirmedRemovalCount) };
       case 'refresh':
       case 'backup':
         try { await controller.capture(request.kind === 'backup' ? 'manual' : 'automatic'); }

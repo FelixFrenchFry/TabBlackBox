@@ -18,9 +18,12 @@ export type Operation = RestoreProgress & (
   | { kind: 'completed' | 'interrupted'; finishedAt: number }
 );
 export type Metadata = {
+  settings?: StorageSettings;
   latestId: string | null; lastSavedAt: number | null; lastCheckedAt: number | null;
   bytes: number; count: number; operation: Operation | null;
 };
+export type StorageSettings = { retentionDays: number | null; maxBackups: number | null; maxStorageMB: number };
+export type StorageSettingsResult = { kind: 'saved' } | { kind: 'confirmation'; removeCount: number };
 export type CaptureResult = { kind: 'saved'; id: string } | { kind: 'unchanged' | 'empty' };
 export type Status = { kind: 'initializing' | 'pending' | 'current' | 'empty' | 'restoring' } | { kind: 'error'; message: string };
 export type Overview = { status: Status; metadata: Metadata; latest: Summary | null };

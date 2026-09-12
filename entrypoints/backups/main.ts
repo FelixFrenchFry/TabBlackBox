@@ -45,7 +45,7 @@ const more = button('Load older backups', icons.ChevronDown, 'button load-more')
 more.hidden = true;
 list.append(listHeader, rows);
 const footer = el('footer', 'history-footer');
-footer.append(icon(icons.HardDrive), el('span', '', 'Saved on this device · Last 24 hours and at least 200 recent backups, within storage capacity.'));
+footer.append(icon(icons.HardDrive), el('span', '', 'Saved on this device · Older backups are removed according to your storage settings.'));
 main.append(heading, status, feedback, operationRegion, list, more, footer);
 const settings = createSettingsView();
 root.append(header, nav, main, settings.element);
@@ -68,6 +68,7 @@ showView();
 let items: Summary[] = [];
 let historyGeneration = 0;
 let latestId: string | null = null;
+let historyCount: number | null = null;
 let restoring = false;
 let backingUp = false;
 let operationKey = '';
@@ -337,9 +338,10 @@ const refresh = createRefreshQueue(async kind =>
     const data = await request({ kind });
     if (data.kind !== 'overview') throw new Error('Unexpected background response.');
     applyOverview(data.overview);
-    if (latestId !== data.overview.metadata.latestId || !rows.childElementCount) {
+    if (latestId !== data.overview.metadata.latestId || historyCount !== data.overview.metadata.count || !rows.childElementCount) {
       await loadHistory(true);
       latestId = data.overview.metadata.latestId;
+      historyCount = data.overview.metadata.count;
       feedback.replaceChildren();
     }
     if (kind === 'backup') feedback.replaceChildren(el('p', 'muted', data.overview.status.kind === 'current' ? 'Current session is saved. Identical backups are kept only once.' : data.overview.status.kind === 'pending' ? 'Tabs changed during capture. Automatic backup will retry.' : ''));

@@ -1,6 +1,7 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
-import type { CaptureResult, HistoryCursor, Metadata, Operation, Session, Snapshot, Source, Summary } from './model';
-import { BYTE_BUDGET, canonicalSession, retainedIds, summarize } from './session';
+import type { CaptureResult, HistoryCursor, Metadata, Operation, Session, Snapshot, Source, StorageSettings, StorageSettingsResult, Summary } from './model';
+import { canonicalSession, summarize } from './session';
+import { DEFAULT_STORAGE_SETTINGS, retentionPlan } from './storage';
 
 interface BackupDatabase extends DBSchema {
   snapshots: { key: string; value: Snapshot };
@@ -12,7 +13,7 @@ const initialMetadata = (): Metadata => ({ latestId: null, lastSavedAt: null, la
 
 export class Repository {
   private connection: Promise<IDBPDatabase<BackupDatabase>> | null = null;
-  constructor(private readonly name = 'tabblackbox', private readonly budget = BYTE_BUDGET) {}
+  constructor(private readonly name = 'tabblackbox', private readonly budget?: number) {}
 
   private db(): Promise<IDBPDatabase<BackupDatabase>>
   {
@@ -67,36 +68,55 @@ export class Repository {
 
   async capture(session: Session, source: Source, now: number): Promise<CaptureResult>
   {
+    return this.writeCapture(session, source, now);
+  }
+
+  async setStorageSettings(settings: StorageSettings, confirmedRemovalCount: number, session: Session, now: number): Promise<StorageSettingsResult>
+  {
+    const result = await this.writeCapture(session, 'automatic', now, { settings, confirmedRemovalCount });
+    return result.kind === 'confirmation' ? result : { kind: 'saved' };
+  }
+
+  private writeCapture(session: Session, source: Source, now: number): Promise<CaptureResult>;
+  private writeCapture(session: Session, source: Source, now: number, change: { settings: StorageSettings; confirmedRemovalCount: number }): Promise<CaptureResult | StorageSettingsResult>;
+  private async writeCapture(session: Session, source: Source, now: number, change?: { settings: StorageSettings; confirmedRemovalCount: number }): Promise<CaptureResult | StorageSettingsResult>
+  {
     const db = await this.db();
-    // update snapshots, summaries, and metadata in one transaction
+    // plan the candidate and commit snapshots, retention, and settings in one transaction
     const tx = db.transaction(['snapshots', 'summaries', 'metadata'], 'readwrite');
     try {
       const metadata = (await tx.objectStore('metadata').get('state')) ?? initialMetadata();
       if (metadata.operation?.kind === 'running') throw new Error('Restoration is in progress.');
       const latest = metadata.latestId ? await tx.objectStore('snapshots').get(metadata.latestId) : undefined;
       let result: CaptureResult = { kind: 'empty' };
+      let candidate: Snapshot | undefined;
       if (session.windows.length) {
         if (latest && canonicalSession(latest) === canonicalSession(session)) result = { kind: 'unchanged' };
         else {
-          const snapshot: Snapshot = { ...session, id: crypto.randomUUID(), schemaVersion: 1, capturedAt: now, source };
-          const summary = summarize(snapshot);
-          const history = [...await tx.objectStore('summaries').getAll(), summary];
-          const keep = retainedIds(history, now);
-          const kept = history.filter(item => keep.has(item.id));
-          const bytes = kept.reduce((total, item) => total + item.bytes, 0);
-          if (bytes > this.budget) throw new Error('Backup failed: storage full');
-          for (const item of history) {
-            if (!keep.has(item.id)) {
-              await tx.objectStore('snapshots').delete(item.id);
-              await tx.objectStore('summaries').delete(item.id);
-            }
-          }
-          await tx.objectStore('snapshots').add(snapshot);
-          await tx.objectStore('summaries').add(summary);
-          Object.assign(metadata, { latestId: snapshot.id, lastSavedAt: now, bytes, count: kept.length });
-          result = { kind: 'saved', id: snapshot.id };
+          candidate = { ...session, id: crypto.randomUUID(), schemaVersion: 1, capturedAt: now, source };
+          result = { kind: 'saved', id: candidate.id };
         }
       }
+      // include the prospective backup in the deletion count before any writes
+      const history = await tx.objectStore('summaries').getAll();
+      if (candidate) history.push(summarize(candidate));
+      const settings = change?.settings ?? metadata.settings ?? DEFAULT_STORAGE_SETTINGS;
+      const plan = retentionPlan(history, candidate?.id ?? metadata.latestId, settings, now, this.budget);
+      if (change && plan.removeIds.length > change.confirmedRemovalCount) {
+        await tx.done;
+        return { kind: 'confirmation', removeCount: plan.removeIds.length };
+      }
+      for (const id of plan.removeIds) {
+        await tx.objectStore('snapshots').delete(id);
+        await tx.objectStore('summaries').delete(id);
+      }
+      if (candidate) {
+        await tx.objectStore('snapshots').add(candidate);
+        await tx.objectStore('summaries').add(summarize(candidate));
+        Object.assign(metadata, { latestId: candidate.id, lastSavedAt: now });
+      }
+      if (change) metadata.settings = change.settings;
+      Object.assign(metadata, { bytes: plan.bytes, count: plan.count });
       metadata.lastCheckedAt = now;
       await tx.objectStore('metadata').put(metadata, 'state');
       await tx.done;

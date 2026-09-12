@@ -1,7 +1,7 @@
-import { errorMessage, type Overview } from '../model';
-import { BYTE_BUDGET } from '../session';
+import { errorMessage, type Overview, type StorageSettings } from '../model';
+import { DEFAULT_STORAGE_SETTINGS, MB, parseStorageSettings } from '../storage';
 import { readAppearance, setAppearance } from './appearance';
-import { el, icon, icons, notice, plural, statusView } from './shared';
+import { button, el, icon, icons, notice, plural, request, statusView } from './shared';
 
 function settingsPanel(title: string, glyph: Parameters<typeof icon>[0])
 {
@@ -13,6 +13,52 @@ function settingsPanel(title: string, glyph: Parameters<typeof icon>[0])
   return { element, body };
 }
 
+function storageSetting(name: string, description: string, id: string, unit: string, max: number)
+{
+  const row = el('div', 'storage-setting-row');
+  const text = el('div', 'setting-description');
+  const label = el('label', 'setting-name', name);
+  label.htmlFor = id;
+  const explanation = el('p', 'muted', description);
+  explanation.id = `${id}-description`;
+  text.append(label, explanation);
+  const control = el('div', 'settings-number-control');
+  const input = el('input', 'settings-number');
+  input.type = 'number';
+  input.id = id;
+  input.min = '1';
+  input.max = String(max);
+  input.step = '1';
+  input.required = true;
+  input.disabled = true;
+  input.setAttribute('aria-describedby', explanation.id);
+  control.append(input, el('span', 'muted', unit));
+  row.append(text, control);
+  return { row, input, control };
+}
+
+function confirmCleanup(count: number): Promise<boolean>
+{
+  return new Promise(resolve => {
+    const dialog = el('dialog', 'restore-dialog');
+    const title = el('h2', '', 'Delete older backups?');
+    title.id = 'storage-confirm-title';
+    dialog.setAttribute('aria-labelledby', title.id);
+    dialog.append(title, el('p', '', `Applying these limits will delete ${plural(count, 'older backup')}. This cannot be undone. Your newest backup will be kept.`));
+    const actions = el('div', 'dialog-actions');
+    const cancel = button('Cancel', icons.Check);
+    const confirm = button('Apply limits', icons.HardDrive, 'button primary');
+    actions.append(cancel, confirm);
+    dialog.append(actions);
+    cancel.addEventListener('click', () => dialog.close());
+    confirm.addEventListener('click', () => dialog.close('apply'));
+    dialog.addEventListener('close', () => { const accepted = dialog.returnValue === 'apply'; dialog.remove(); resolve(accepted); }, { once: true });
+    document.body.append(dialog);
+    dialog.showModal();
+    cancel.focus();
+  });
+}
+
 export function createSettingsView()
 {
   const element = el('main', 'history-main');
@@ -22,7 +68,7 @@ export function createSettingsView()
   heading.append(titles);
   const { element: appearance, body: appearanceBody } = settingsPanel('Appearance', icons.Palette);
   const themeRow = el('div', 'settings-row');
-  const label = el('label', '', 'Color theme');
+  const label = el('label', 'setting-name', 'Color theme');
   label.htmlFor = 'color-theme';
   const select = el('select', 'settings-select');
   select.id = 'color-theme';
@@ -45,17 +91,117 @@ export function createSettingsView()
   });
   const selectControl = el('div', 'settings-select-control');
   selectControl.append(select, icon(icons.ChevronDown));
-  themeRow.append(label, selectControl);
-  appearanceBody.append(themeRow, el('p', 'muted', 'System follows your device’s appearance. Your choice also applies to the popup.'), appearanceFeedback);
+  const themeDescription = el('div', 'setting-description');
+  const themeExplanation = el('p', 'muted', 'Choose a light or dark theme, or follow your device’s appearance.');
+  themeExplanation.id = 'color-theme-description';
+  select.setAttribute('aria-describedby', themeExplanation.id);
+  themeDescription.append(label, themeExplanation);
+  themeRow.append(themeDescription, selectControl);
+  appearanceBody.append(themeRow, appearanceFeedback);
 
   const { element: storage, body: storageBody } = settingsPanel('Storage', icons.HardDrive);
   const usage = el('p', 'settings-storage muted', 'Checking storage…');
+  const usageRow = el('div', 'storage-usage');
+  const percentage = el('span', 'storage-percentage muted', '—');
+  usageRow.append(usage, percentage);
   const meter = el('progress', 'storage-meter');
-  meter.max = BYTE_BUDGET;
+  meter.max = DEFAULT_STORAGE_SETTINGS.maxStorageMB * MB;
   meter.setAttribute('aria-label', 'Backup storage used');
-  storageBody.append(usage, meter,
-    el('p', 'muted', 'Backups stay on this device. TabBlackBox keeps the last 24 hours and at least 200 recent backups, within the storage limit.'),
-    el('p', 'muted', 'If the storage limit is reached, new backups pause and an error is shown. Existing backups are preserved.'));
+  const age = storageSetting('Time limit', 'Time limit before a saved backup expires. Expired backups are deleted. This can be turned on/off.', 'retention-days', 'days', 3650);
+  const count = storageSetting('Backup limit', 'Maximum number of saved backups. The oldest backup is deleted whenever this limit is exceeded. This can be turned on/off.', 'maximum-backups', 'backups', 100_000);
+  const capacity = storageSetting('Storage limit', 'Maximum space available for backup data. The oldest backups are deleted whenever space is needed. This is always enforced.', 'maximum-storage', 'MB', 100_000);
+  function optionalLimit(setting: typeof age) {
+    const toggle = el('input');
+    toggle.type = 'checkbox';
+    toggle.className = 'limit-switch';
+    toggle.setAttribute('role', 'switch');
+    toggle.checked = true;
+    toggle.disabled = true;
+    toggle.setAttribute('aria-label', setting === age ? 'Enable time limit' : 'Enable backup limit');
+    const label = el('label', 'limit-toggle');
+    const state = el('span', '', 'On');
+    label.append(state, toggle);
+    setting.control.prepend(label);
+    function sync(): void
+    {
+      setting.row.classList.toggle('is-inactive', !toggle.checked);
+      state.textContent = toggle.checked ? 'On' : 'Off';
+    }
+    toggle.addEventListener('change', () => { setting.input.disabled = !toggle.checked; sync(); });
+    return { setting, toggle, sync };
+  }
+  const ageLimit = optionalLimit(age);
+  const countLimit = optionalLimit(count);
+  const optionalLimits = [ageLimit, countLimit];
+  const form = el('form', 'storage-settings-form');
+  const save = button('Save storage settings', icons.Save, 'button primary');
+  save.type = 'submit';
+  save.disabled = true;
+  const storageFeedback = el('div');
+  storageFeedback.setAttribute('aria-live', 'polite');
+
+  function updateControls(): void
+  {
+    updateSave();
+    capacity.input.disabled = saving;
+    for (const { setting, toggle, sync } of optionalLimits) {
+      sync();
+      toggle.disabled = saving;
+      setting.input.disabled = saving || !toggle.checked;
+    }
+  }
+  let dirty = false;
+  let saving = false;
+  let baseline: StorageSettings | undefined;
+  const draft = () => ({
+    retentionDays: ageLimit.toggle.checked ? age.input.valueAsNumber : null,
+    maxBackups: countLimit.toggle.checked ? count.input.valueAsNumber : null,
+    maxStorageMB: capacity.input.valueAsNumber,
+  });
+  function updateSave(): void
+  {
+    const current = draft();
+    dirty = baseline !== undefined && (current.retentionDays !== baseline.retentionDays || current.maxBackups !== baseline.maxBackups || current.maxStorageMB !== baseline.maxStorageMB);
+    save.disabled = !baseline || !dirty || saving;
+  }
+  const actions = el('div', 'storage-settings-actions');
+  actions.append(save);
+  form.append(capacity.row, count.row, age.row, actions, storageFeedback);
+  form.addEventListener('input', updateSave);
+  form.addEventListener('submit', event => {
+    event.preventDefault();
+    if (save.disabled || !form.reportValidity()) return;
+    void (async () => {
+      saving = true;
+      save.disabled = true;
+      updateControls();
+      storageFeedback.replaceChildren();
+      try {
+        const settings = parseStorageSettings(draft());
+        let confirmedRemovalCount = 0;
+        // confirm the current deletion count before applying smaller limits
+        for (;;) {
+          const data = await request({ kind: 'storage-settings', settings, confirmedRemovalCount });
+          if (data.kind !== 'storage-settings') throw new Error('Unexpected settings response.');
+          if (data.result.kind === 'saved') break;
+          if (!await confirmCleanup(data.result.removeCount)) return;
+          confirmedRemovalCount = data.result.removeCount;
+        }
+        dirty = false;
+        baseline = settings;
+        storageFeedback.replaceChildren(el('p', 'muted', 'Storage settings saved.'));
+        const data = await request({ kind: 'overview' });
+        if (data.kind === 'overview') view.update(data.overview);
+      } catch (error) { storageFeedback.replaceChildren(notice(errorMessage(error))); }
+      finally {
+        saving = false;
+        updateControls();
+        save.disabled = !dirty;
+        save.focus();
+      }
+    })();
+  });
+  storageBody.append(usageRow, meter, form);
 
   const { element: automatic, body: automaticBody } = settingsPanel('Automatic backups', icons.Clock3);
   const backupStatus = el('div');
@@ -64,17 +210,32 @@ export function createSettingsView()
   const feedback = el('div');
   feedback.setAttribute('aria-live', 'polite');
   element.append(heading, appearance, feedback, storage, automatic);
-  return {
+  const view = {
     element,
     update(overview: Overview): void
     {
       feedback.replaceChildren();
-      const mib = overview.metadata.bytes / 1024 / 1024;
-      const used = mib > 0 && mib < 0.01 ? '<0.01' : mib.toLocaleString(undefined, { maximumFractionDigits: 2 });
-      usage.textContent = `${plural(overview.metadata.count, 'saved backup')} · ${used} MiB of ${BYTE_BUDGET / 1024 / 1024} MiB backup data used`;
+      const settings = overview.metadata.settings ?? DEFAULT_STORAGE_SETTINGS;
+      const mb = overview.metadata.bytes / MB;
+      const used = mb > 0 && mb < 0.01 ? '<0.01' : mb.toLocaleString(undefined, { maximumFractionDigits: 2 });
+      const percent = mb / settings.maxStorageMB * 100;
+      const percentText = percent > 0 && percent < 0.1 ? '<0.1' : percent.toLocaleString(undefined, { maximumFractionDigits: 1 });
+      usage.textContent = `${plural(overview.metadata.count, 'saved backup')} · ${used} MB of ${settings.maxStorageMB.toLocaleString()} MB used`;
+      percentage.textContent = `${percentText}%`;
+      meter.max = settings.maxStorageMB * MB;
       meter.value = overview.metadata.bytes;
+      meter.setAttribute('aria-valuetext', `${used} MB used, ${percentText}% of storage limit`);
+      if (!dirty && !saving) {
+        age.input.value = String(settings.retentionDays ?? DEFAULT_STORAGE_SETTINGS.retentionDays);
+        ageLimit.toggle.checked = settings.retentionDays !== null;
+        count.input.value = String(settings.maxBackups ?? DEFAULT_STORAGE_SETTINGS.maxBackups);
+        countLimit.toggle.checked = settings.maxBackups !== null;
+        capacity.input.value = String(settings.maxStorageMB);
+      }
+      if (!saving) { baseline = settings; updateControls(); }
       backupStatus.replaceChildren(statusView(overview));
     },
     showError(message: string): void { feedback.replaceChildren(notice(message)); },
   };
+  return view;
 }

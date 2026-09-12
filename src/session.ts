@@ -48,13 +48,6 @@ export function restorableUrl(url: string | null): url is string
 }
 
 export const DAY_MS = 86_400_000;
-export const BYTE_BUDGET = 100 * 1024 * 1024;
-
-export function retainedIds(records: { id: string; capturedAt: number }[], now: number): Set<string>
-{
-  const newest = [...records].sort((a, b) => b.capturedAt - a.capturedAt || b.id.localeCompare(a.id));
-  return new Set(newest.filter((item, index) => index < 200 || item.capturedAt >= now - DAY_MS).map(item => item.id));
-}
 
 export function summarize(snapshot: Snapshot): Summary
 {

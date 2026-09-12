@@ -1,5 +1,6 @@
+import { StorageLimitExceededError } from './storage';
 import type { Repository } from './database';
-import { errorMessage, type Overview, type Session, type Snapshot, type Source, type Status } from './model';
+import { errorMessage, type Overview, type Session, type Snapshot, type Source, type Status, type StorageSettings, type StorageSettingsResult } from './model';
 import { restoreSession, type RestorePort } from './restore';
 import { restorableUrl, summarize } from './session';
 
@@ -110,6 +111,17 @@ export class Controller {
     await this.enqueue(() => this.performCapture(source));
   }
 
+  private captureFailed(error: unknown, phase: 'scan' | 'write'): void
+  {
+    this.status = { kind: 'error', message: errorMessage(error) };
+    // retry scans after changes settle and back off failed database writes
+    if (phase === 'scan') this.changed();
+    else {
+      this.retryAfter = Date.now() + 60_000;
+      this.stopTimers();
+    }
+  }
+
   private async performCapture(source: Source): Promise<void>
   {
     const generation = this.generation;
@@ -118,8 +130,7 @@ export class Controller {
     try {
       session = await this.scan();
     } catch (error) {
-      this.status = { kind: 'error', message: errorMessage(error) };
-      this.changed();
+      this.captureFailed(error, 'scan');
       return;
     }
     try {
@@ -129,9 +140,7 @@ export class Controller {
       this.status = generation === this.generation
         ? { kind: result.kind === 'empty' ? 'empty' : 'current' } : { kind: 'pending' };
     } catch (error) {
-      this.status = { kind: 'error', message: errorMessage(error) };
-      this.retryAfter = Date.now() + 60_000;
-      this.stopTimers();
+      this.captureFailed(error, 'write');
     }
   }
 
@@ -142,6 +151,43 @@ export class Controller {
     const metadata = await this.repository.metadata();
     const newest = metadata.latestId ? await this.repository.get(metadata.latestId) : null;
     return { status: this.status, metadata, latest: newest ? summarize(newest) : null };
+  }
+
+  async setStorageSettings(settings: StorageSettings, confirmedRemovalCount: number): Promise<StorageSettingsResult>
+  {
+    await this.start(true);
+    if (this.restoration.kind !== 'idle') throw new Error('Wait for restoration to finish before changing storage limits.');
+    return this.enqueue(async () => {
+      // scan outside IndexedDB and reject browser changes observed during the scan
+      const generation = this.generation;
+      let session: Session;
+      try { session = await this.scan(); }
+      catch (error) {
+        this.captureFailed(error, 'scan');
+        throw error;
+      }
+      if (generation !== this.generation) {
+        this.changed();
+        throw new Error('Tabs changed while checking storage limits. Try saving the settings again.');
+      }
+      let result: StorageSettingsResult;
+      try { result = await this.repository.setStorageSettings(settings, confirmedRemovalCount, session, Date.now()); }
+      catch (error) {
+        // rejecting proposed limits leaves the active backup policy and status intact
+        if (error instanceof StorageLimitExceededError) {
+          throw new Error('The proposed storage limit cannot fit the newest backup. Increase the storage limit. Your settings have not changed.');
+        }
+        this.captureFailed(error, 'write');
+        throw error;
+      }
+      if (result.kind === 'saved') {
+        this.retryAfter = 0;
+        this.status = generation === this.generation
+          ? { kind: session.windows.length ? 'current' : 'empty' } : { kind: 'pending' };
+        if (generation !== this.generation) this.changed();
+      }
+      return result;
+    });
   }
 
   async restore(id: string): Promise<void>
