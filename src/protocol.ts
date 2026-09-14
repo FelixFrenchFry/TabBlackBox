@@ -2,8 +2,8 @@ import { parseAutomaticUpdate } from './automatic';
 import type { AutomaticUpdate, CaptureResult, HistoryCursor, Overview, Snapshot, StorageSettings, StorageSettingsResult, Summary } from './model';
 import { parseStorageSettings } from './storage';
 
-export const HISTORY_INITIAL_LIMIT = 25;
-export const HISTORY_PAGE_LIMIT = 50;
+export const HISTORY_INITIAL_LIMIT = 10;
+export const HISTORY_PAGE_LIMIT = 20;
 export const SESSION_NAME_LIMIT = 100;
 
 export type Request = { kind: 'automatic-settings'; update: AutomaticUpdate } | { kind: 'overview' | 'refresh' | 'backup' } | { kind: 'history'; before: HistoryCursor | null } | { kind: 'snapshot' | 'restore'; id: string } | { kind: 'rename'; id: string; name: string | null } | { kind: 'restore-window'; id: string; windowIndex: number } | { kind: 'storage-settings'; settings: StorageSettings; confirmedRemovalCount: number };

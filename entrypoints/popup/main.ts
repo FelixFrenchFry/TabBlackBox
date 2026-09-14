@@ -1,6 +1,7 @@
 import { errorMessage } from '../../src/model';
 import { setup, brand, button, icon, icons, el, request, createStatusView, notice } from '../../src/ui/shared';
 import { createRefreshQueue } from '../../src/ui/refresh-queue';
+import { createBackupButton } from '../../src/ui/backup-button';
 
 const root = setup();
 const header = el('header', 'popup-header');
@@ -16,17 +17,10 @@ const status = statusCard.element;
 status.classList.add('status-region');
 const feedback = el('div', 'popup-feedback');
 feedback.setAttribute('aria-live', 'polite');
-const save = el('button', 'button primary popup-save');
-save.type = 'button';
-const saveLabel = document.createTextNode('Back up now');
-const saveIcons = { idle: icon(icons.Save), saving: icon(icons.LoaderCircle), saved: icon(icons.Check) };
-saveIcons.saving.classList.add('save-spinner');
-let displayedState: keyof typeof saveIcons = 'idle';
-save.setAttribute('aria-live', 'polite');
-save.append(saveIcons.idle, saveLabel);
+const backup = createBackupButton(() => { void refresh('backup'); });
 const history = button('View backups', icons.History);
 const actions = el('div', 'popup-actions');
-actions.append(save, history);
+actions.append(backup.element, history);
 content.append(status, actions, feedback);
 const footer = el('footer', 'popup-footer');
 footer.append(icon(icons.LockKeyhole, 14), el('span', '', 'Backups are stored on this device. No accounts. No cloud.'));
@@ -34,21 +28,9 @@ root.append(header, content, footer);
 
 let backingUp = false;
 let restoring = false;
-let saved = false;
 function updateSave(): void
 {
-  const state = backingUp ? 'saving' : saved ? 'saved' : 'idle';
-  save.disabled = backingUp || saved || restoring;
-  save.setAttribute('aria-busy', String(backingUp));
-  save.classList.toggle('is-saved', state === 'saved');
-  save.classList.toggle('is-saving', state === 'saving');
-  // preserve the icon and text during polls so pointer clicks remain intact
-  if (state !== displayedState) {
-    saveIcons[displayedState].replaceWith(saveIcons[state]);
-    displayedState = state;
-  }
-  const label = backingUp ? 'Backing up…' : saved ? 'Saved' : 'Back up now';
-  if (saveLabel.data !== label) saveLabel.data = label;
+  backup.update(backingUp, restoring);
 }
 const refresh = createRefreshQueue(async kind =>
 {
@@ -59,16 +41,12 @@ const refresh = createRefreshQueue(async kind =>
     statusCard.update(data.overview);
     restoring = data.overview.status.kind === 'restoring';
     updateSave();
-    if (kind === 'backup' && data.overview.status.kind === 'current') {
-      saved = true;
-      // hold the confirmation independently of subsequent status polls
-      setTimeout(() => { saved = false; updateSave(); }, 2000);
-    } else if (kind === 'backup' && data.overview.status.kind === 'pending') {
+    if (kind === 'backup') backup.finish(data.overview, data.captureResult);
+    if (kind === 'backup' && data.overview.status.kind === 'pending') {
       feedback.replaceChildren(el('p', 'muted', 'Tabs changed during capture. Automatic backup will retry.'));
     }
   } catch (error) { feedback.replaceChildren(notice(errorMessage(error))); }
 }, value => { backingUp = value; updateSave(); });
-save.addEventListener('click', () => { if (!save.disabled) void refresh('backup'); });
 history.addEventListener('click', () => { void chrome.tabs.create({ url: chrome.runtime.getURL('/backups.html') }); });
 settings.addEventListener('click', () => { void chrome.tabs.create({ url: chrome.runtime.getURL('/backups.html#settings') }); });
 void refresh('refresh');

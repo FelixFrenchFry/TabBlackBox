@@ -4,13 +4,15 @@ import { FILE_ACCESS_MESSAGE, fileUrl, restorableUrl, selectWindows } from '../.
 import { canRestore, createSessionDialogLock } from '../../src/ui/restore-state';
 import { setup, brand, button, icons, icon, el, request, createStatusView, notice, plural } from '../../src/ui/shared';
 import { createRefreshQueue } from '../../src/ui/refresh-queue';
+import { createBackupButton } from '../../src/ui/backup-button';
+import { createToast } from '../../src/ui/toast';
 import { createSettingsView } from '../../src/ui/settings';
 import { HISTORY_INITIAL_LIMIT, HISTORY_PAGE_LIMIT, SESSION_NAME_LIMIT } from '../../src/protocol';
 
 const root = setup();
 const header = el('header', 'app-header');
 const headerInner = el('div', 'header-inner');
-headerInner.append(brand(), el('span', 'local-label', 'Local session backups'));
+headerInner.append(brand(), el('span', 'local-label', 'Local browser session backups'));
 header.append(headerInner);
 const nav = el('nav', 'navigation');
 nav.setAttribute('aria-label', 'Main navigation');
@@ -26,30 +28,13 @@ const main = el('main', 'history-main');
 const heading = el('div', 'page-heading');
 const titles = el('div');
 titles.append(el('h1', '', 'Backup history'), el('p', 'muted', 'TabBlackBox automatically saves your browser sessions, including the URLs and arrangement of your open tabs and windows. Expand a saved session to browse its tabs, open individual links, or restore the entire session in your browser.'));
-const save = el('button', 'button primary');
-save.type = 'button';
-const saveLabel = document.createTextNode('Back up now');
-save.append(icon(icons.Save), saveLabel);
+const backup = createBackupButton(() => { void refresh('backup'); });
 heading.append(titles);
-const statusCard = createStatusView(save);
+const statusCard = createStatusView(backup.element);
 const status = statusCard.element;
 const feedback = el('div');
 feedback.setAttribute('aria-live', 'polite');
-const toast = el('div', 'toast-region');
-toast.setAttribute('role', 'status');
-toast.setAttribute('aria-atomic', 'true');
-let toastTimer: ReturnType<typeof setTimeout> | undefined;
-
-function showBackupToast(message: string, glyph = icons.Check): void
-{
-  clearTimeout(toastTimer);
-  toast.replaceChildren();
-  if (!message) return;
-  const content = el('div', 'backup-toast');
-  content.append(icon(glyph), el('span', '', message));
-  toast.append(content);
-  toastTimer = setTimeout(() => toast.replaceChildren(), 4000);
-}
+const toast = createToast();
 
 const operationRegion = el('div');
 operationRegion.setAttribute('aria-live', 'polite');
@@ -65,8 +50,8 @@ list.append(listHeader, rows);
 const footer = el('footer', 'history-footer');
 footer.append(icon(icons.HardDrive), el('span', '', 'Backups are stored on this device. Your storage settings determine how long they are kept.'));
 main.append(heading, status, feedback, operationRegion, list, more, footer);
-const settings = createSettingsView(() => { void refresh('backup'); });
-root.append(header, nav, main, settings.element, toast);
+const settings = createSettingsView(() => { void refresh('backup'); }, () => toast.show('Settings have been saved'));
+root.append(header, nav, main, settings.element, toast.element);
 
 function showView(): void
 {
@@ -78,7 +63,7 @@ function showView(): void
     if (selected) link.setAttribute('aria-current', 'page');
     else link.removeAttribute('aria-current');
   }
-  document.title = `${isSettings ? 'Settings' : 'Backup history'} · TabBlackBox`;
+  document.title = `TabBlackBox · ${isSettings ? 'Settings' : 'Backup history'}`;
 }
 window.addEventListener('hashchange', showView);
 showView();
@@ -499,10 +484,8 @@ async function loadHistory(reset: boolean, preserveLoaded = false): Promise<void
 
 function updateSave(): void
 {
-  save.disabled = backingUp || restoring;
+  backup.update(backingUp, restoring);
   settings.setBackupState(backingUp, restoring);
-  const label = backingUp ? 'Backing up…' : 'Back up now';
-  if (saveLabel.data !== label) saveLabel.data = label;
 }
 
 function updateDialogButtons(): void
@@ -524,7 +507,7 @@ function applyOverview(overview: Overview): void
 
 const refresh = createRefreshQueue(async kind =>
 {
-  if (kind === 'backup') { feedback.replaceChildren(); showBackupToast(''); }
+  if (kind === 'backup') { feedback.replaceChildren(); toast.clear(); }
   try {
     const data = await request({ kind });
     if (data.kind !== 'overview') throw new Error('Unexpected background response.');
@@ -538,16 +521,16 @@ const refresh = createRefreshQueue(async kind =>
       feedback.replaceChildren();
     }
     if (kind === 'backup') {
-      if (data.overview.status.kind === 'current' && data.captureResult?.kind === 'saved') showBackupToast('Your session is saved.');
-      else if (data.overview.status.kind === 'current' && data.captureResult?.kind === 'unchanged') showBackupToast('Your session is already up to date.');
-      else if (data.overview.status.kind === 'pending') showBackupToast('Tabs changed during capture. Automatic backup will retry.', icons.Clock3);
+      backup.finish(data.overview, data.captureResult);
+      settings.finishBackup(data.overview, data.captureResult);
+      if (data.overview.status.kind === 'current' && data.captureResult?.kind === 'unchanged') toast.show('A backup of this session already exists');
+      else if (data.overview.status.kind === 'pending') toast.show('Tabs changed during capture. Automatic backup will retry.', icons.Clock3);
     }
   } catch (error) {
     feedback.replaceChildren(notice(errorMessage(error)));
     settings.showError(errorMessage(error));
   }
 }, value => { backingUp = value; updateSave(); updateDialogButtons(); });
-save.addEventListener('click', () => { void refresh('backup'); });
 more.addEventListener('click', () =>
 {
   void loadHistory(false).catch((error: unknown) => feedback.replaceChildren(notice(errorMessage(error))));

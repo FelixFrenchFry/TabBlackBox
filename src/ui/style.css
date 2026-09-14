@@ -86,7 +86,8 @@ details[open] > .backup-summary > svg { transform: rotate(0); }
 .notice { padding: 12px 16px; border: 1px solid var(--borderColor-default); border-radius: 6px; margin-bottom: 15px; background: var(--bgColor-muted); overflow-wrap: anywhere; }
 .toast-region { position: fixed; right: 20px; bottom: 20px; z-index: 10; max-width: min(420px, calc(100vw - 40px)); pointer-events: none; }
 .backup-toast { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border: 1px solid var(--borderColor-default); border-radius: 8px; background: var(--bgColor-default); color: var(--fgColor-default); box-shadow: 0 4px 16px #0003; }
-.backup-toast > svg { color: var(--fgColor-success); }
+.backup-toast > svg { color: var(--fgColor-muted); }
+.backup-toast.is-success > svg { color: var(--fgColor-success); }
 .error-notice { border-color: var(--borderColor-danger-emphasis, #cf222e); color: var(--fgColor-danger); }
 .warning-notice { border-color: var(--borderColor-attention-emphasis, #9a6700); }
 .notice details { margin-top: 10px; }
@@ -132,13 +133,13 @@ details[open] > .backup-summary > svg { transform: rotate(0); }
 .popup-actions .button { flex: 1; min-width: 0; }
 .popup-feedback { margin-top: 8px; }
 .popup-feedback:empty { display: none; }
-.popup-save { transition: background-color 180ms ease, border-color 180ms ease; }
-.popup-save.is-saving:disabled { opacity: 1; }
-.popup-save.is-saved { background: #238636; border-color: #2ea043; }
+.backup-button { width: 150px; transition: background-color 180ms ease, border-color 180ms ease; }
+.backup-button.is-saving:disabled { opacity: 1; }
+.backup-button.is-saved { background: #238636; border-color: #2ea043; }
 .save-spinner { animation: save-spin 1s linear infinite; }
 @keyframes save-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) {
-  .popup-save { transition: none; }
+  .backup-button { transition: none; }
   .save-spinner { animation: none; }
 }
 .popup-feedback > p { margin: 0; }
@@ -202,10 +203,4 @@ input.limit-switch[type="checkbox"]:checked::before { top: 7px; left: 12px; righ
 
 .popup .scheduled-backup-time { display: block; margin-left: 0; }
 
-.settings-save-status { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; min-height: 21px; padding: 0 7px; border: 1px solid transparent; border-radius: 6px; color: var(--fgColor-muted); font-size: 12px; font-weight: 400; opacity: 1; transition: opacity 180ms ease; }
-.settings-save-status.is-idle { opacity: 0; }
 .setting-validation { color: var(--fgColor-danger); }
-@media (prefers-reduced-motion: reduce) { .settings-save-status { transition: none; } }
-
-.settings-save-status[data-state="saved"] { color: var(--fgColor-success); background: var(--bgColor-success-muted); border-color: var(--borderColor-success-muted); }
-.settings-save-status[data-state="error"] { color: var(--fgColor-danger); background: var(--bgColor-danger-muted); border-color: var(--borderColor-danger-muted); }

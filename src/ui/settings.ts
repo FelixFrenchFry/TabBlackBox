@@ -1,4 +1,4 @@
-import { createSaveStatus } from './save-status';
+import { createBackupButton } from './backup-button';
 import { automaticSettings } from './automatic-settings';
 import { readDateFormat, setDateFormat } from './dates';
 import { errorMessage, type Overview, type StorageSettings } from '../model';
@@ -12,10 +12,8 @@ function settingsPanel(title: string, glyph: Parameters<typeof icon>[0])
   const header = el('h2', 'list-header', title);
   header.prepend(icon(glyph));
   const body = el('div', 'settings-body');
-  const saveStatus = createSaveStatus();
-  header.append(saveStatus.element);
   element.append(header, body);
-  return { element, body, saveStatus };
+  return { element, body };
 }
 
 function storageSetting(name: string, description: string, id: string, unit: string, max: number)
@@ -67,14 +65,14 @@ function confirmCleanup(count: number): Promise<boolean>
   });
 }
 
-export function createSettingsView(backUpNow: () => void)
+export function createSettingsView(backUpNow: () => void, onSaved: () => void)
 {
   const element = el('main', 'history-main');
   const heading = el('div', 'page-heading');
   const titles = el('div');
   titles.append(el('h1', '', 'Settings'), el('p', 'muted', 'Control when backups are saved, how long they are kept, and how TabBlackBox looks.'));
   heading.append(titles);
-  const { element: appearance, body: appearanceBody, saveStatus: appearanceSave } = settingsPanel('Appearance', icons.Palette);
+  const { element: appearance, body: appearanceBody } = settingsPanel('Appearance', icons.Palette);
   const themeRow = el('div', 'settings-row');
   const label = el('label', 'setting-name', 'Color theme');
   label.htmlFor = 'color-theme';
@@ -94,8 +92,8 @@ export function createSettingsView(backUpNow: () => void)
   {
     const value = select.value;
     if (value !== 'system' && value !== 'light' && value !== 'dark') return;
-    try { setAppearance(value); appearanceFeedback.replaceChildren(); appearanceSave.update('saved'); }
-    catch (error) { appearanceSave.update('error'); sync(); appearanceFeedback.replaceChildren(notice(errorMessage(error))); }
+    try { setAppearance(value); appearanceFeedback.replaceChildren(); onSaved(); }
+    catch (error) { sync(); appearanceFeedback.replaceChildren(notice(errorMessage(error))); }
   });
   const selectControl = el('div', 'settings-select-control');
   selectControl.append(select, icon(icons.ChevronDown));
@@ -126,15 +124,15 @@ export function createSettingsView(backUpNow: () => void)
   dateSelect.addEventListener('change', () => {
     const value = dateSelect.value;
     if (value !== 'exact' && value !== 'relative' && value !== 'combination') return;
-    try { setDateFormat(value); appearanceFeedback.replaceChildren(); appearanceSave.update('saved'); }
-    catch (error) { appearanceSave.update('error'); syncDates(); appearanceFeedback.replaceChildren(notice(errorMessage(error))); }
+    try { setDateFormat(value); appearanceFeedback.replaceChildren(); onSaved(); }
+    catch (error) { syncDates(); appearanceFeedback.replaceChildren(notice(errorMessage(error))); }
   });
   const dateControl = el('div', 'settings-select-control');
   dateControl.append(dateSelect, icon(icons.ChevronDown));
   dateRow.append(dateText, dateControl);
   appearanceBody.append(themeRow, dateRow, appearanceFeedback);
 
-  const { element: storage, body: storageBody, saveStatus } = settingsPanel('Storage', icons.HardDrive);
+  const { element: storage, body: storageBody } = settingsPanel('Storage', icons.HardDrive);
   const usage = el('p', 'settings-storage muted', 'Checking storage…');
   const usageRow = el('div', 'storage-usage');
   const percentage = el('span', 'storage-percentage muted', '—');
@@ -169,7 +167,6 @@ export function createSettingsView(backUpNow: () => void)
   const countLimit = optionalLimit(count);
   const optionalLimits = [ageLimit, countLimit];
   const form = el('form', 'storage-settings-form');
-  saveStatus.element.classList.add('storage-save-status');
   const storageFeedback = el('div');
   storageFeedback.setAttribute('aria-live', 'polite');
   let dirty = false;
@@ -227,7 +224,6 @@ export function createSettingsView(backUpNow: () => void)
     const settings = parseStorageSettings(draft());
     const focused = document.activeElement;
     saving = true;
-    saveStatus.update('saving');
     updateControls();
     storageFeedback.replaceChildren();
     try {
@@ -239,16 +235,14 @@ export function createSettingsView(backUpNow: () => void)
         if (data.result.kind === 'saved') break;
         if (!await confirmCleanup(data.result.removeCount)) {
           restoreDraft(baseline);
-          saveStatus.update('idle');
           return;
         }
         confirmedRemovalCount = data.result.removeCount;
       }
       baseline = settings;
       dirty = false;
-      saveStatus.update('saved');
+      onSaved();
     } catch (error) {
-      saveStatus.update('error');
       const retry = button('Retry', icons.RotateCcw, 'button small');
       retry.addEventListener('click', () => { if (!saving) void saveSettings(); });
       storageFeedback.replaceChildren(notice(errorMessage(error)), retry);
@@ -264,7 +258,6 @@ export function createSettingsView(backUpNow: () => void)
   form.addEventListener('input', event => {
     if (saving) return;
     clearTimeout(saveTimer);
-    saveStatus.update('idle');
     storageFeedback.replaceChildren();
     updateSave();
     if (event.target instanceof HTMLInputElement && event.target.type === 'checkbox') return;
@@ -303,15 +296,11 @@ export function createSettingsView(backUpNow: () => void)
   updateSave();
   storageBody.append(usageRow, meter, form);
 
-  const { element: automatic, body: automaticBody, saveStatus: automaticSave } = settingsPanel('Automatic backups', icons.Clock3);
-  const backUp = el('button', 'button primary');
-  backUp.type = 'button';
-  const backUpLabel = document.createTextNode('Back up now');
-  backUp.append(icon(icons.Save), backUpLabel);
-  backUp.disabled = true;
-  backUp.addEventListener('click', () => { if (!backUp.disabled) backUpNow(); });
-  const backupStatus = createStatusView(backUp);
-  const automaticControls = automaticSettings(overview => view.update(overview), automaticSave.update);
+  const { element: automatic, body: automaticBody } = settingsPanel('Automatic backups', icons.Clock3);
+  const backUp = createBackupButton(backUpNow);
+  backUp.element.disabled = true;
+  const backupStatus = createStatusView(backUp.element);
+  const automaticControls = automaticSettings(overview => view.update(overview), onSaved);
   automaticBody.append(automaticControls.element, backupStatus.element);
   const feedback = el('div');
   feedback.setAttribute('aria-live', 'polite');
@@ -339,11 +328,8 @@ export function createSettingsView(backUpNow: () => void)
       automaticControls.update(overview);
       backupStatus.update(overview);
     },
-    setBackupState(backingUp: boolean, restoring: boolean): void {
-      backUp.disabled = backingUp || restoring;
-      const label = backingUp ? 'Backing up…' : 'Back up now';
-      if (backUpLabel.data !== label) backUpLabel.data = label;
-    },
+    setBackupState: backUp.update,
+    finishBackup: backUp.finish,
     showError(message: string): void { feedback.replaceChildren(notice(message)); },
   };
   return view;
