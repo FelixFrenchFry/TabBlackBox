@@ -55,7 +55,7 @@ export function brand(): HTMLElement
   return item;
 }
 
-export function createStatusView()
+export function createStatusView(action?: HTMLButtonElement)
 {
   const element = el('section', 'status-card');
   element.setAttribute('aria-label', 'Backup status');
@@ -87,7 +87,13 @@ export function createStatusView()
   const checkedTime = timestamp(null);
   checked.append(checkedTime);
   times.append(saved, checked);
-  element.append(title, description, times);
+  if (action) {
+    const content = el('div', 'automatic-status-content');
+    content.append(title, description, times);
+    const wrapper = el('div', 'automatic-status-wrapper');
+    wrapper.append(content, action);
+    element.append(wrapper);
+  } else element.append(title, description, times);
   return {
     element,
     update(overview: Overview): void

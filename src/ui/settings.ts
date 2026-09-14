@@ -304,19 +304,13 @@ export function createSettingsView(backUpNow: () => void)
   storageBody.append(usageRow, meter, form);
 
   const { element: automatic, body: automaticBody, saveStatus: automaticSave } = settingsPanel('Automatic backups', icons.Clock3);
-  const backupStatus = createStatusView();
-  const statusContent = el('div', 'automatic-status-content');
-  statusContent.append(...backupStatus.element.childNodes);
   const backUp = el('button', 'button primary');
   backUp.type = 'button';
   const backUpLabel = document.createTextNode('Back up now');
   backUp.append(icon(icons.Save), backUpLabel);
   backUp.disabled = true;
   backUp.addEventListener('click', () => { if (!backUp.disabled) backUpNow(); });
-  backupStatus.element.classList.add('automatic-status');
-  const statusWrapper = el('div', 'automatic-status-wrapper');
-  statusWrapper.append(statusContent, backUp);
-  backupStatus.element.append(statusWrapper);
+  const backupStatus = createStatusView(backUp);
   const automaticControls = automaticSettings(overview => view.update(overview), automaticSave.update);
   automaticBody.append(automaticControls.element, backupStatus.element);
   const feedback = el('div');

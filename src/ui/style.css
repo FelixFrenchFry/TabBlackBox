@@ -37,7 +37,7 @@ p { margin-top: 6px; }
 .nav-item.active::after { content: ''; height: 2px; background: #fd8c73; position: absolute; bottom: -1px; left: 8px; right: 8px; border-radius: 2px; }
 .history-main { padding-block: 26px 18px; }
 .page-heading { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 18px; }
-.status-card { padding: 13px 20px; border: 1px solid var(--borderColor-default); border-radius: 6px; margin-bottom: 18px; background: var(--bgColor-default); }
+.status-card { padding: 10px 16px; border: 1px solid var(--borderColor-default); border-radius: 6px; margin-bottom: 18px; background: var(--bgColor-default); }
 .status-title { display: flex; gap: 10px; align-items: center; }
 .status-current .status-title svg { color: var(--fgColor-success, #1a7f37); }
 .status-error { border-color: var(--borderColor-danger-emphasis, #cf222e); }
@@ -109,8 +109,8 @@ details[open] > .backup-summary > svg { transform: rotate(0); }
 .settings-select-control { position: relative; flex-shrink: 0; }
 .settings-select-control > svg { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); pointer-events: none; }
 .settings-select { appearance: none; width: 160px; min-height: 34px; padding: 6px 40px 6px 12px; text-align: left; text-align-last: left; color: var(--fgColor-default); background: var(--bgColor-muted); border: 1px solid var(--borderColor-default); border-radius: 6px; cursor: pointer; }
-.settings-card .status-card { margin: 9px 0 0; padding: 10px 16px; }
-.settings-card .status-times { margin-top: 6px; }
+.settings-card .status-card { margin: 9px 0 0; }
+.automatic-status-content > .status-times { margin-top: 6px; }
 .storage-meter { appearance: none; display: block; width: 100%; height: 10px; margin: 9px 0; border: 0; border-radius: 5px; overflow: hidden; background: var(--borderColor-muted); }
 .storage-meter::-webkit-progress-bar { background: var(--borderColor-muted); border-radius: inherit; }
 .storage-meter::-webkit-progress-value { background: var(--fgColor-accent); border-radius: inherit; }
