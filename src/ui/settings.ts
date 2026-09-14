@@ -1,3 +1,4 @@
+import { createSaveStatus } from './save-status';
 import { automaticSettings } from './automatic-settings';
 import { readDateFormat, setDateFormat } from './dates';
 import { errorMessage, type Overview, type StorageSettings } from '../model';
@@ -11,8 +12,10 @@ function settingsPanel(title: string, glyph: Parameters<typeof icon>[0])
   const header = el('h2', 'list-header', title);
   header.prepend(icon(glyph));
   const body = el('div', 'settings-body');
+  const saveStatus = createSaveStatus();
+  header.append(saveStatus.element);
   element.append(header, body);
-  return { element, body };
+  return { element, body, saveStatus };
 }
 
 function storageSetting(name: string, description: string, id: string, unit: string, max: number)
@@ -23,7 +26,10 @@ function storageSetting(name: string, description: string, id: string, unit: str
   label.htmlFor = id;
   const explanation = el('p', 'muted', description);
   explanation.id = `${id}-description`;
-  text.append(label, explanation);
+  const validation = el('p', 'setting-validation');
+  validation.id = `${id}-validation`;
+  validation.hidden = true;
+  text.append(label, explanation, validation);
   const control = el('div', 'settings-number-control');
   const input = el('input', 'settings-number');
   input.type = 'number';
@@ -33,10 +39,10 @@ function storageSetting(name: string, description: string, id: string, unit: str
   input.step = '1';
   input.required = true;
   input.disabled = true;
-  input.setAttribute('aria-describedby', explanation.id);
+  input.setAttribute('aria-describedby', `${explanation.id} ${validation.id}`);
   control.append(input, el('span', 'muted', unit));
   row.append(text, control);
-  return { row, input, control };
+  return { row, input, control, validation };
 }
 
 function confirmCleanup(count: number): Promise<boolean>
@@ -68,7 +74,7 @@ export function createSettingsView(backUpNow: () => void)
   const titles = el('div');
   titles.append(el('h1', '', 'Settings'), el('p', 'muted', 'Choose your appearance and review local backup storage.'));
   heading.append(titles);
-  const { element: appearance, body: appearanceBody } = settingsPanel('Appearance', icons.Palette);
+  const { element: appearance, body: appearanceBody, saveStatus: appearanceSave } = settingsPanel('Appearance', icons.Palette);
   const themeRow = el('div', 'settings-row');
   const label = el('label', 'setting-name', 'Color theme');
   label.htmlFor = 'color-theme';
@@ -88,8 +94,8 @@ export function createSettingsView(backUpNow: () => void)
   {
     const value = select.value;
     if (value !== 'system' && value !== 'light' && value !== 'dark') return;
-    try { setAppearance(value); appearanceFeedback.replaceChildren(); }
-    catch (error) { sync(); appearanceFeedback.replaceChildren(notice(errorMessage(error))); }
+    try { setAppearance(value); appearanceFeedback.replaceChildren(); appearanceSave.update('saved'); }
+    catch (error) { appearanceSave.update('error'); sync(); appearanceFeedback.replaceChildren(notice(errorMessage(error))); }
   });
   const selectControl = el('div', 'settings-select-control');
   selectControl.append(select, icon(icons.ChevronDown));
@@ -120,15 +126,15 @@ export function createSettingsView(backUpNow: () => void)
   dateSelect.addEventListener('change', () => {
     const value = dateSelect.value;
     if (value !== 'exact' && value !== 'relative' && value !== 'combination') return;
-    try { setDateFormat(value); appearanceFeedback.replaceChildren(); }
-    catch (error) { syncDates(); appearanceFeedback.replaceChildren(notice(errorMessage(error))); }
+    try { setDateFormat(value); appearanceFeedback.replaceChildren(); appearanceSave.update('saved'); }
+    catch (error) { appearanceSave.update('error'); syncDates(); appearanceFeedback.replaceChildren(notice(errorMessage(error))); }
   });
   const dateControl = el('div', 'settings-select-control');
   dateControl.append(dateSelect, icon(icons.ChevronDown));
   dateRow.append(dateText, dateControl);
   appearanceBody.append(themeRow, dateRow, appearanceFeedback);
 
-  const { element: storage, body: storageBody } = settingsPanel('Storage', icons.HardDrive);
+  const { element: storage, body: storageBody, saveStatus } = settingsPanel('Storage', icons.HardDrive);
   const usage = el('p', 'settings-storage muted', 'Checking storage…');
   const usageRow = el('div', 'storage-usage');
   const percentage = el('span', 'storage-percentage muted', '—');
@@ -163,32 +169,14 @@ export function createSettingsView(backUpNow: () => void)
   const countLimit = optionalLimit(count);
   const optionalLimits = [ageLimit, countLimit];
   const form = el('form', 'storage-settings-form');
-  const save = el('button', 'button primary storage-save');
-  const saveLabel = document.createTextNode('Save storage settings');
-  const saveIcons = { idle: icon(icons.Save), saving: icon(icons.LoaderCircle), saved: icon(icons.Check) };
-  saveIcons.saving.classList.add('save-spinner');
-  let displayedState: keyof typeof saveIcons = 'idle';
-  save.append(saveIcons.idle, saveLabel);
-  save.setAttribute('aria-live', 'polite');
-  save.type = 'submit';
-  save.disabled = true;
+  saveStatus.element.classList.add('storage-save-status');
   const storageFeedback = el('div');
   storageFeedback.setAttribute('aria-live', 'polite');
-
-  function updateControls(): void
-  {
-    updateSave();
-    capacity.input.disabled = saving;
-    for (const { setting, toggle, sync } of optionalLimits) {
-      sync();
-      toggle.disabled = saving;
-      setting.input.disabled = saving || !toggle.checked;
-    }
-  }
   let dirty = false;
   let saving = false;
-  let saved = false;
   let baseline: StorageSettings | undefined;
+  let saveTimer: ReturnType<typeof setTimeout> | undefined;
+  let pressingToggle = false;
   const draft = () => ({
     retentionDays: ageLimit.toggle.checked ? age.input.valueAsNumber : null,
     maxBackups: countLimit.toggle.checked ? count.input.valueAsNumber : null,
@@ -198,56 +186,124 @@ export function createSettingsView(backUpNow: () => void)
   {
     const current = draft();
     dirty = baseline !== undefined && (current.retentionDays !== baseline.retentionDays || current.maxBackups !== baseline.maxBackups || current.maxStorageMB !== baseline.maxStorageMB);
-    const state = saving ? 'saving' : saved ? 'saved' : 'idle';
-    save.disabled = !baseline || !dirty || saving || saved;
-    save.setAttribute('aria-busy', String(saving));
-    save.classList.toggle('is-saving', state === 'saving');
-    save.classList.toggle('is-saved', state === 'saved');
-    if (state !== displayedState) {
-      saveIcons[displayedState].replaceWith(saveIcons[state]);
-      displayedState = state;
-    }
-    saveLabel.data = saving ? 'Saving…' : saved ? 'Saved' : 'Save storage settings';
   }
-  const actions = el('div', 'storage-settings-actions');
-  actions.append(save);
-  form.append(capacity.row, count.row, age.row, actions, storageFeedback);
-  form.addEventListener('input', updateSave);
-  form.addEventListener('submit', event => {
-    event.preventDefault();
-    if (save.disabled || !form.reportValidity()) return;
-    void (async () => {
-      saving = true;
-      save.disabled = true;
-      updateControls();
-      storageFeedback.replaceChildren();
-      try {
-        const settings = parseStorageSettings(draft());
-        let confirmedRemovalCount = 0;
-        // confirm the current deletion count before applying smaller limits
-        for (;;) {
-          const data = await request({ kind: 'storage-settings', settings, confirmedRemovalCount });
-          if (data.kind !== 'storage-settings') throw new Error('Unexpected settings response.');
-          if (data.result.kind === 'saved') break;
-          if (!await confirmCleanup(data.result.removeCount)) return;
-          confirmedRemovalCount = data.result.removeCount;
+  function updateControls(): void
+  {
+    updateSave();
+    form.setAttribute('aria-busy', String(saving));
+    capacity.input.disabled = saving || !baseline;
+    for (const { setting, toggle, sync } of optionalLimits) {
+      sync();
+      toggle.disabled = saving || !baseline;
+      setting.input.disabled = saving || !baseline || !toggle.checked;
+    }
+  }
+  function restoreDraft(settings: StorageSettings): void
+  {
+    age.input.value = String(settings.retentionDays ?? 30);
+    ageLimit.toggle.checked = settings.retentionDays !== null;
+    count.input.value = String(settings.maxBackups ?? 2000);
+    countLimit.toggle.checked = settings.maxBackups !== null;
+    capacity.input.value = String(settings.maxStorageMB);
+  }
+  function validate(): boolean
+  {
+    let valid = true;
+    for (const { input, validation } of [capacity, count, age]) {
+      const invalid = !input.disabled && !input.validity.valid;
+      input.setAttribute('aria-invalid', String(invalid));
+      validation.hidden = !invalid;
+      validation.textContent = invalid ? input.validationMessage : '';
+      if (invalid) valid = false;
+    }
+    return valid;
+  }
+  async function saveSettings(): Promise<void>
+  {
+    clearTimeout(saveTimer);
+    if (saving || !baseline) return;
+    updateSave();
+    if (!validate() || !dirty) return;
+    const settings = parseStorageSettings(draft());
+    const focused = document.activeElement;
+    saving = true;
+    saveStatus.update('saving');
+    updateControls();
+    storageFeedback.replaceChildren();
+    try {
+      let confirmedRemovalCount = 0;
+      // confirm the current deletion count before applying smaller limits
+      for (;;) {
+        const data = await request({ kind: 'storage-settings', settings, confirmedRemovalCount });
+        if (data.kind !== 'storage-settings') throw new Error('Unexpected settings response.');
+        if (data.result.kind === 'saved') break;
+        if (!await confirmCleanup(data.result.removeCount)) {
+          restoreDraft(baseline);
+          saveStatus.update('idle');
+          return;
         }
-        dirty = false;
-        baseline = settings;
-        saved = true;
-        const data = await request({ kind: 'overview' });
-        if (data.kind === 'overview') view.update(data.overview);
-      } catch (error) { storageFeedback.replaceChildren(notice(errorMessage(error))); }
-      finally {
-        saving = false;
-        updateControls();
-        if (saved) setTimeout(() => { saved = false; updateSave(); }, 2000);
+        confirmedRemovalCount = data.result.removeCount;
       }
-    })();
+      baseline = settings;
+      dirty = false;
+      saveStatus.update('saved');
+    } catch (error) {
+      saveStatus.update('error');
+      const retry = button('Retry', icons.RotateCcw, 'button small');
+      retry.addEventListener('click', () => { if (!saving) void saveSettings(); });
+      storageFeedback.replaceChildren(notice(errorMessage(error)), retry);
+    } finally {
+      saving = false;
+      updateControls();
+      if (!element.hidden && document.activeElement === document.body && focused instanceof HTMLInputElement && !focused.disabled) focused.focus();
+    }
+  }
+  // settle numeric edits while toggles, Enter and leaving a field commit immediately
+  form.append(capacity.row, count.row, age.row, storageFeedback);
+  form.noValidate = true;
+  form.addEventListener('input', event => {
+    if (saving) return;
+    clearTimeout(saveTimer);
+    saveStatus.update('idle');
+    storageFeedback.replaceChildren();
+    updateSave();
+    if (event.target instanceof HTMLInputElement && event.target.type === 'checkbox') return;
+    if (validate() && dirty) saveTimer = setTimeout(() => { void saveSettings(); }, 250);
   });
+  form.addEventListener('change', event => {
+    if (event.target instanceof HTMLInputElement && event.target.type === 'checkbox') void saveSettings();
+  });
+  // let pointer activation finish before saving disables the toggle and its label
+  form.addEventListener('pointerdown', event => {
+    if (!(event.target instanceof Element) || !event.target.closest('.limit-toggle')) return;
+    pressingToggle = true;
+    clearTimeout(saveTimer);
+  });
+  function releaseToggle(): void
+  {
+    if (!pressingToggle) return;
+    pressingToggle = false;
+    // a canceled click still saves the numeric edit after the pointer is released
+    saveTimer = setTimeout(() => { void saveSettings(); }, 0);
+  }
+  document.addEventListener('pointerup', releaseToggle);
+  document.addEventListener('pointercancel', releaseToggle);
+  form.addEventListener('focusout', event => {
+    if (pressingToggle) return;
+    if (event.relatedTarget instanceof HTMLInputElement && event.relatedTarget.type === 'checkbox' && form.contains(event.relatedTarget)) return;
+    if (event.target instanceof HTMLInputElement && event.target.type === 'number') void saveSettings();
+  });
+  form.addEventListener('keydown', event => {
+    if (event.key === 'Enter' && event.target instanceof HTMLInputElement) {
+      event.preventDefault();
+      void saveSettings();
+    }
+  });
+  form.addEventListener('submit', event => { event.preventDefault(); void saveSettings(); });
+  updateSave();
   storageBody.append(usageRow, meter, form);
 
-  const { element: automatic, body: automaticBody } = settingsPanel('Automatic backups', icons.Clock3);
+  const { element: automatic, body: automaticBody, saveStatus: automaticSave } = settingsPanel('Automatic backups', icons.Clock3);
   const backupStatus = createStatusView();
   const statusContent = el('div', 'automatic-status-content');
   statusContent.append(...backupStatus.element.childNodes);
@@ -261,7 +317,7 @@ export function createSettingsView(backUpNow: () => void)
   const statusWrapper = el('div', 'automatic-status-wrapper');
   statusWrapper.append(statusContent, backUp);
   backupStatus.element.append(statusWrapper);
-  const automaticControls = automaticSettings(overview => view.update(overview));
+  const automaticControls = automaticSettings(overview => view.update(overview), automaticSave.update);
   automaticBody.append(automaticControls.element, backupStatus.element);
   const feedback = el('div');
   feedback.setAttribute('aria-live', 'polite');
@@ -281,13 +337,7 @@ export function createSettingsView(backUpNow: () => void)
       meter.max = settings.maxStorageMB * MB;
       meter.value = overview.metadata.bytes;
       meter.setAttribute('aria-valuetext', `${used} MB used, ${percentText}% of storage limit`);
-      if (!dirty && !saving) {
-        age.input.value = String(settings.retentionDays ?? 30);
-        ageLimit.toggle.checked = settings.retentionDays !== null;
-        count.input.value = String(settings.maxBackups ?? 2000);
-        countLimit.toggle.checked = settings.maxBackups !== null;
-        capacity.input.value = String(settings.maxStorageMB);
-      }
+      if (!dirty && !saving) restoreDraft(settings);
       if (!saving) {
         baseline = settings;
         updateControls();

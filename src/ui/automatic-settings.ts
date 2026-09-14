@@ -1,9 +1,10 @@
+import type { SaveState } from './save-status';
 import { applyAutomaticUpdate, DEFAULT_AUTOMATIC_SETTINGS } from '../automatic';
 import { errorMessage, type AutomaticSettings, type AutomaticUpdate, type Overview } from '../model';
 
 import { button, el, icon, icons, notice, request } from './shared';
 
-export function automaticSettings(onOverview: (overview: Overview) => void)
+export function automaticSettings(onOverview: (overview: Overview) => void, onSaveState: (state: SaveState) => void)
 {
   const element = el('div');
   const feedback = el('div');
@@ -80,6 +81,7 @@ export function automaticSettings(onOverview: (overview: Overview) => void)
     const previous = settings;
     settings = applyAutomaticUpdate(settings, update, Date.now());
     busy = true;
+    onSaveState('saving');
     render();
     feedback.replaceChildren();
     try {
@@ -87,7 +89,8 @@ export function automaticSettings(onOverview: (overview: Overview) => void)
       if (data.kind !== 'overview') throw new Error('Unexpected settings response.');
       settings = data.overview.metadata.automatic;
       onOverview(data.overview);
-    } catch (error) { settings = previous; feedback.replaceChildren(notice(errorMessage(error))); }
+      onSaveState('saved');
+    } catch (error) { onSaveState('error'); settings = previous; feedback.replaceChildren(notice(errorMessage(error))); }
     finally { busy = false; render(); }
   }
   enabled.addEventListener('change', () => { void change({ kind: 'enabled', value: enabled.checked }); });
