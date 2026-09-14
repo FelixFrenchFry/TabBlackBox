@@ -1,6 +1,6 @@
 import { timestamp } from '../../src/ui/dates';
 import { errorMessage, type Operation, type Overview, type Snapshot, type Summary } from '../../src/model';
-import { restorableUrl } from '../../src/session';
+import { FILE_ACCESS_MESSAGE, fileUrl, restorableUrl } from '../../src/session';
 import { canRestore } from '../../src/ui/restore-state';
 import { setup, brand, button, icons, icon, el, request, createStatusView, notice, plural } from '../../src/ui/shared';
 import { createRefreshQueue } from '../../src/ui/refresh-queue';
@@ -74,8 +74,29 @@ let historyCount: number | null = null;
 let restoring = false;
 let backingUp = false;
 let operationKey = '';
+let fileAccess = false;
 const restoreButtons = new Map<HTMLButtonElement, number>();
 const sessionRows = new Map<string, ReturnType<typeof row>>();
+
+async function updateFileAccess(): Promise<void>
+{
+  fileAccess = await chrome.extension.isAllowedFileSchemeAccess();
+  // refresh expanded previews when Chrome's file access setting changes
+  for (const control of rows.querySelectorAll<HTMLButtonElement>('.file-open')) control.disabled = !fileAccess;
+  for (const message of rows.querySelectorAll<HTMLElement>('.file-access-required')) message.hidden = fileAccess;
+}
+
+function fileAccessNotice(): HTMLElement
+{
+  const message = el('div', 'notice warning-notice file-access-required');
+  message.append(el('p', '', FILE_ACCESS_MESSAGE));
+  const settings = button('Open extension settings', icons.Settings);
+  settings.addEventListener('click', () => {
+    void chrome.tabs.create({ url: `chrome://extensions/?id=${chrome.runtime.id}` }).catch((error: unknown) => message.append(notice(errorMessage(error))));
+  });
+  message.append(settings);
+  return message;
+}
 
 function renderOperation(operation: Operation | null): void
 {
@@ -103,19 +124,27 @@ function renderOperation(operation: Operation | null): void
 async function confirmRestore(snapshot: Snapshot, trigger: HTMLButtonElement): Promise<void>
 {
   if (restoring || backingUp) return;
+  await updateFileAccess();
+  if (restoring || backingUp) return;
   const tabs = snapshot.windows.flatMap(window => window.tabs);
-  const supported = tabs.filter(tab => restorableUrl(tab.url)).length;
-  const windows = snapshot.windows.filter(window => window.tabs.some(tab => restorableUrl(tab.url))).length;
+  const supported = tabs.filter(tab => restorableUrl(tab.url, fileAccess)).length;
+  const windows = snapshot.windows.filter(window => window.tabs.some(tab => restorableUrl(tab.url, fileAccess))).length;
+  const blockedFiles = !fileAccess ? tabs.filter(tab => fileUrl(tab.url)).length : 0;
   const dialog = el('dialog', 'restore-dialog');
   dialog.setAttribute('aria-labelledby', 'restore-title');
   const title = el('h2', '', 'Restore this session?');
   title.id = 'restore-title';
   dialog.append(title, el('p', '', `${plural(supported, 'tab')} will open in ${plural(windows, 'new window')}. Your current windows will stay open.`));
-  if (tabs.length > supported) dialog.append(el('p', 'muted', `${plural(tabs.length - supported, 'unsupported tab')} will be skipped. Their saved URLs remain in the preview.`));
+  if (blockedFiles) {
+    dialog.append(el('p', 'muted', `${plural(blockedFiles, 'local file')} will be skipped until file access is enabled.`), fileAccessNotice());
+    dialog.append(el('p', 'muted', 'After enabling access, close this dialog and choose Restore again.'));
+  }
+  if (tabs.length > supported + blockedFiles) dialog.append(el('p', 'muted', `${plural(tabs.length - supported - blockedFiles, 'unsupported tab')} will be skipped. Their saved URLs remain in the preview.`));
   dialog.append(el('p', 'muted', 'Restoring a session again creates another copy of its tabs.'));
   const actions = el('div', 'dialog-actions');
   const cancel = button('Cancel', icons.Check);
   const confirm = button('Restore session', icons.RotateCcw, 'button primary');
+  confirm.disabled = supported === 0;
   actions.append(cancel, confirm);
   dialog.append(actions);
   root.append(dialog);
@@ -144,7 +173,7 @@ function favicon(url: string | null): HTMLElement
 {
   const frame = el('span', 'tab-favicon');
   frame.setAttribute('aria-hidden', 'true');
-  const fallback = icon(url?.startsWith('file:') ? icons.FileText : icons.Globe);
+  const fallback = icon(fileUrl(url) ? icons.FileText : icons.Globe);
   if (restorableUrl(url) && url !== 'about:blank') {
     // retrieve website icons through Chrome using the saved page URL
     const source = new URL(chrome.runtime.getURL('/_favicon/'));
@@ -166,6 +195,11 @@ function favicon(url: string | null): HTMLElement
 function preview(snapshot: Snapshot): HTMLElement
 {
   const content = el('div', 'snapshot-preview');
+  if (snapshot.windows.some(window => window.tabs.some(tab => fileUrl(tab.url)))) {
+    const message = fileAccessNotice();
+    message.hidden = fileAccess;
+    content.append(message);
+  }
   for (const [index, window] of snapshot.windows.entries()) {
     const section = el('section', 'window-preview');
     const heading = el('h3', 'window-heading');
@@ -178,7 +212,20 @@ function preview(snapshot: Snapshot): HTMLElement
       const title = el('span', 'tab-title', tab.title || tab.url || 'Unavailable tab');
       let open: HTMLAnchorElement | HTMLButtonElement;
       // allow individual navigation for the same URL schemes supported by restoration
-      if (restorableUrl(tab.url)) {
+      if (tab.url !== null && fileUrl(tab.url)) {
+        const url = tab.url;
+        const file = button('', icons.ArrowUpRight, 'tab-open file-open');
+        file.disabled = !fileAccess;
+        file.title = 'Open local file in new tab';
+        file.addEventListener('click', () => {
+          void (async () => {
+            await updateFileAccess();
+            if (!fileAccess) throw new Error(FILE_ACCESS_MESSAGE);
+            await chrome.tabs.create({ url });
+          })().catch((error: unknown) => feedback.replaceChildren(notice(errorMessage(error))));
+        });
+        open = file;
+      } else if (restorableUrl(tab.url)) {
         open = el('a', 'tab-open');
         open.href = tab.url;
         open.target = '_blank';
@@ -199,7 +246,11 @@ function preview(snapshot: Snapshot): HTMLElement
         const group = window.groups[tab.group];
         if (group) item.append(el('span', `group-label group-${group.color}`, group.name || 'Unnamed group'));
       }
-      if (!restorableUrl(tab.url)) item.append(el('span', 'badge unsupported', 'Will be skipped'));
+      if (fileUrl(tab.url)) {
+        const badge = el('span', 'badge unsupported file-access-required', 'File access required');
+        badge.hidden = fileAccess;
+        item.append(badge);
+      } else if (!restorableUrl(tab.url)) item.append(el('span', 'badge unsupported', 'Will be skipped'));
       tabs.append(item);
     }
     section.append(tabs);
@@ -220,9 +271,8 @@ function row(item: Summary)
   summary.append(icon(icons.ChevronDown), label, el('span', 'badge', item.source === 'manual' ? 'Manual' : 'Automatic'));
   details.append(summary);
   const restore = button('Restore', icons.RotateCcw, 'button small');
-  restore.disabled = !canRestore({ supportedCount: item.supportedCount, backingUp, restoring });
-  if (!item.supportedCount) restore.title = 'This backup has no supported tabs to restore.';
-  restoreButtons.set(restore, item.supportedCount);
+  restore.disabled = !canRestore({ tabCount: item.tabCount, backingUp, restoring });
+  restoreButtons.set(restore, item.tabCount);
   wrapper.append(details, restore);
   let snapshot: Snapshot | undefined;
   async function load(): Promise<Snapshot>
@@ -244,7 +294,7 @@ function row(item: Summary)
   restore.addEventListener('click', () =>
   {
     restore.disabled = true;
-    void load().then(value => confirmRestore(value, restore)).catch((error: unknown) => feedback.replaceChildren(notice(errorMessage(error)))).finally(() => { restore.disabled = !canRestore({ supportedCount: item.supportedCount, backingUp, restoring }); });
+    void load().then(value => confirmRestore(value, restore)).catch((error: unknown) => feedback.replaceChildren(notice(errorMessage(error)))).finally(() => { restore.disabled = !canRestore({ tabCount: item.tabCount, backingUp, restoring }); });
   });
   return { element: wrapper, details, restore };
 }
@@ -322,7 +372,7 @@ function updateSave(): void
 
 function updateRestoreButtons(): void
 {
-  for (const [button, supportedCount] of restoreButtons) button.disabled = !canRestore({ supportedCount, backingUp, restoring });
+  for (const [button, tabCount] of restoreButtons) button.disabled = !canRestore({ tabCount, backingUp, restoring });
 }
 
 function applyOverview(overview: Overview): void
@@ -342,6 +392,7 @@ const refresh = createRefreshQueue(async kind =>
   try {
     const data = await request({ kind });
     if (data.kind !== 'overview') throw new Error('Unexpected background response.');
+    await updateFileAccess();
     applyOverview(data.overview);
     if (latestId !== data.overview.metadata.latestId || historyCount !== data.overview.metadata.count || !rows.childElementCount) {
       await loadHistory(true);

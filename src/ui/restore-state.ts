@@ -1,10 +1,11 @@
 export type RestoreAvailability = {
-  supportedCount: number;
+  tabCount: number;
   backingUp: boolean;
   restoring: boolean;
 };
 
-export function canRestore({ supportedCount, backingUp, restoring }: RestoreAvailability): boolean
+export function canRestore({ tabCount, backingUp, restoring }: RestoreAvailability): boolean
 {
-  return supportedCount > 0 && !backingUp && !restoring;
+  // opening confirmation checks the snapshot against current file access
+  return tabCount > 0 && !backingUp && !restoring;
 }

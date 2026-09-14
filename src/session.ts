@@ -37,13 +37,22 @@ export function canonicalSession(session: Session): string
   return JSON.stringify(session.windows.map(window => JSON.stringify(window)).sort());
 }
 
-export function restorableUrl(url: string | null): url is string
+export function fileUrl(url: string | null): boolean
+{
+  if (!url) return false;
+  try { return new URL(url).protocol === 'file:'; }
+  catch { return false; }
+}
+
+export const FILE_ACCESS_MESSAGE = 'To open local files, enable “Allow access to file URLs” in the details for this extension.';
+
+export function restorableUrl(url: string | null, fileAccess = false): url is string
 {
   if (url === 'about:blank') return true;
   if (!url) return false;
   try {
     const parsed = new URL(url);
-    return parsed.protocol === 'https:' || parsed.protocol === 'http:';
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:' || (fileAccess && parsed.protocol === 'file:');
   } catch { return false; }
 }
 
@@ -55,7 +64,7 @@ export function summarize(snapshot: Snapshot): Summary
   return {
     id: snapshot.id, capturedAt: snapshot.capturedAt, source: snapshot.source,
     windowCount: snapshot.windows.length, tabCount: tabs.length,
-    supportedCount: tabs.filter(tab => restorableUrl(tab.url)).length,
+    supportedCount: tabs.filter(tab => restorableUrl(tab.url, true)).length,
     bytes: new TextEncoder().encode(JSON.stringify(snapshot)).byteLength,
   };
 }

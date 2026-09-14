@@ -2,18 +2,19 @@ import { errorMessage, type Operation, type RestoreProgress, type SavedGroup, ty
 import { restorableUrl } from './session';
 
 export interface RestorePort {
+  fileAccess(): Promise<boolean>;
   createWindow(url: string): Promise<{ windowId: number; tabId: number }>;
   createTab(windowId: number, url: string, pinned: boolean): Promise<number>;
   pinTab(tabId: number): Promise<void>;
   groupTabs(windowId: number, tabIds: number[], group: SavedGroup): Promise<void>;
 }
 
-export async function restoreSession(snapshot: Snapshot, port: RestorePort, persist: (operation: Operation) => Promise<void>): Promise<Operation>
+export async function restoreSession(snapshot: Snapshot, port: RestorePort, persist: (operation: Operation) => Promise<void>, fileAccess = false): Promise<Operation>
 {
   const allTabs = snapshot.windows.flatMap(window => window.tabs);
   const progress: RestoreProgress = {
     snapshotId: snapshot.id, startedAt: Date.now(), opened: 0,
-    skipped: allTabs.filter(tab => !restorableUrl(tab.url)).length,
+    skipped: allTabs.filter(tab => !restorableUrl(tab.url, fileAccess)).length,
     failed: 0, groupErrors: 0, total: allTabs.length, errors: [],
   };
   const recordError = (message: string) => { if (progress.errors.length < 20) progress.errors.push(message); };
@@ -22,7 +23,7 @@ export async function restoreSession(snapshot: Snapshot, port: RestorePort, pers
 
   // restore windows in saved order and persist progress after each operation
   for (const [windowIndex, window] of snapshot.windows.entries()) {
-    const tabs = window.tabs.filter((tab): tab is typeof tab & { url: string } => restorableUrl(tab.url));
+    const tabs = window.tabs.filter((tab): tab is typeof tab & { url: string } => restorableUrl(tab.url, fileAccess));
     const first = tabs[0];
     if (!first) continue;
     let created: { windowId: number; tabId: number };

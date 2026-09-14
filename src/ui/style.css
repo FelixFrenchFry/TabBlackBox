@@ -81,6 +81,10 @@ details[open] > .backup-summary > svg { transform: rotate(0); }
 .error-notice { border-color: var(--borderColor-danger-emphasis, #cf222e); color: var(--fgColor-danger); }
 .warning-notice { border-color: var(--borderColor-attention-emphasis, #9a6700); }
 .notice details { margin-top: 10px; }
+.notice.file-access-required { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 16px; }
+.notice.file-access-required > p { flex: 1 1 320px; margin: 0; }
+.notice.file-access-required > .button { flex-shrink: 0; margin-left: auto; }
+.notice.file-access-required > .notice { flex-basis: 100%; margin: 0; }
 .restore-dialog { width: min(480px, calc(100vw - 32px)); padding: 18px 24px; color: var(--fgColor-default); background: var(--bgColor-default); border: 1px solid var(--borderColor-default); border-radius: 12px; box-shadow: 0 8px 32px #0003; }
 .restore-dialog::backdrop { background: #0006; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }

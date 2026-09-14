@@ -1,4 +1,4 @@
-import { normalizeSession } from './session';
+import { FILE_ACCESS_MESSAGE, fileUrl, normalizeSession } from './session';
 import type { Session } from './model';
 import type { RestorePort } from './restore';
 
@@ -10,8 +10,10 @@ export async function scanBrowser(): Promise<Session>
 }
 
 export const restoreBrowser: RestorePort = {
+  async fileAccess() { return chrome.extension.isAllowedFileSchemeAccess(); },
   async createWindow(url)
   {
+    if (fileUrl(url) && !await chrome.extension.isAllowedFileSchemeAccess()) throw new Error(FILE_ACCESS_MESSAGE);
     const window = await chrome.windows.create({ url, type: 'normal', focused: false });
     const tabId = window?.tabs?.[0]?.id;
     if (window?.id === undefined || tabId === undefined) throw new Error('Chrome did not return the created window. Its outcome is uncertain.');
@@ -19,6 +21,7 @@ export const restoreBrowser: RestorePort = {
   },
   async createTab(windowId, url, pinned)
   {
+    if (fileUrl(url) && !await chrome.extension.isAllowedFileSchemeAccess()) throw new Error(FILE_ACCESS_MESSAGE);
     const tab = await chrome.tabs.create({ windowId, url, pinned, active: false });
     if (tab.id === undefined) throw new Error('Chrome did not return the created tab. Its outcome is uncertain.');
     return tab.id;
