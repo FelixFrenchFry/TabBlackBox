@@ -35,6 +35,22 @@ const statusCard = createStatusView();
 const status = statusCard.element;
 const feedback = el('div');
 feedback.setAttribute('aria-live', 'polite');
+const toast = el('div', 'toast-region');
+toast.setAttribute('role', 'status');
+toast.setAttribute('aria-atomic', 'true');
+let toastTimer: ReturnType<typeof setTimeout> | undefined;
+
+function showBackupToast(message: string, glyph = icons.Check): void
+{
+  clearTimeout(toastTimer);
+  toast.replaceChildren();
+  if (!message) return;
+  const content = el('div', 'backup-toast');
+  content.append(icon(glyph), el('span', '', message));
+  toast.append(content);
+  toastTimer = setTimeout(() => toast.replaceChildren(), 4000);
+}
+
 const operationRegion = el('div');
 operationRegion.setAttribute('aria-live', 'polite');
 const list = el('div', 'backup-list');
@@ -47,10 +63,10 @@ const more = button('Load older backups', icons.ChevronDown, 'button load-more')
 more.hidden = true;
 list.append(listHeader, rows);
 const footer = el('footer', 'history-footer');
-footer.append(icon(icons.HardDrive), el('span', '', 'Saved on this device · Older backups are removed according to your storage settings.'));
+footer.append(icon(icons.HardDrive), el('span', '', 'Backups are stored on this device. Your storage settings determine how long they are kept.'));
 main.append(heading, status, feedback, operationRegion, list, more, footer);
 const settings = createSettingsView(() => { void refresh('backup'); });
-root.append(header, nav, main, settings.element);
+root.append(header, nav, main, settings.element, toast);
 
 function showView(): void
 {
@@ -303,8 +319,8 @@ function renameSession(item: Summary, trigger: HTMLButtonElement): void
   input.type = 'text';
   input.maxLength = SESSION_NAME_LIMIT;
   input.value = item.name ?? '';
-  input.placeholder = `Session #${item.number}`;
-  const help = el('p', 'muted', `Leave blank to use Session #${item.number}.`);
+  input.placeholder = 'Unnamed session';
+  const help = el('p', 'muted', 'Leave blank to use “Unnamed session”.');
   help.id = 'session-name-description';
   input.setAttribute('aria-describedby', help.id);
   const feedback = el('div');
@@ -363,32 +379,21 @@ function row(item: Summary)
   const details = el('details');
   const summary = el('summary', 'backup-summary');
   const label = el('div', 'backup-label');
-  const titleRow = el('span', 'backup-title');
-  const title = el('strong');
+  const title = el('strong', 'backup-title');
   const date = timestamp(item.capturedAt);
-  const number = el('span', 'muted', `· #${item.number}`);
-  const counts = document.createTextNode(`${plural(item.windowCount, 'window')} · ${plural(item.tabCount, 'tab')}`);
-  const description = el('span', 'muted');
-  let displayedName: string | null | undefined;
+  date.className = 'backup-date';
+  const number = el('span', 'backup-number', `#${item.number}`);
+  const counts = el('span', 'muted', `${plural(item.windowCount, 'window')} · ${plural(item.tabCount, 'tab')}`);
   function update(value: Summary): void
   {
     item = value;
-    if (displayedName === item.name) return;
-    displayedName = item.name;
-    title.textContent = item.name ?? `Session #${item.number}`;
-    titleRow.replaceChildren(title);
-    description.replaceChildren();
-    if (item.name !== null) {
-      titleRow.append(number);
-      description.append(date, document.createTextNode(' · '), counts);
-    } else {
-      titleRow.append(el('span', 'muted', '·'), date);
-      description.append(counts);
-    }
+    // update only the name while keeping timestamps and row structure in place
+    const name = item.name ?? 'Unnamed session';
+    if (title.textContent !== name) title.textContent = name;
   }
   update(item);
-  label.append(titleRow, description);
-  summary.append(icon(icons.ChevronDown), label, el('span', 'badge', item.source === 'manual' ? 'Manual' : 'Automatic'));
+  label.append(title, counts);
+  summary.append(icon(icons.ChevronDown), number, label, date, el('span', 'badge', item.source === 'manual' ? 'Manual' : 'Automatic'));
   details.append(summary);
   const restore = button('Restore', icons.RotateCcw, 'button small');
   restore.disabled = sessionDialogLock.active || !canRestore({ tabCount: item.tabCount, backingUp, restoring });
@@ -519,7 +524,7 @@ function applyOverview(overview: Overview): void
 
 const refresh = createRefreshQueue(async kind =>
 {
-  if (kind === 'backup') feedback.replaceChildren();
+  if (kind === 'backup') { feedback.replaceChildren(); showBackupToast(''); }
   try {
     const data = await request({ kind });
     if (data.kind !== 'overview') throw new Error('Unexpected background response.');
@@ -532,7 +537,11 @@ const refresh = createRefreshQueue(async kind =>
       historyRevision = data.overview.metadata.historyRevision;
       feedback.replaceChildren();
     }
-    if (kind === 'backup') feedback.replaceChildren(el('p', 'muted', data.overview.status.kind === 'current' ? 'Current session is saved. Identical backups are kept only once.' : data.overview.status.kind === 'pending' ? 'Tabs changed during capture. Automatic backup will retry.' : ''));
+    if (kind === 'backup') {
+      if (data.overview.status.kind === 'current' && data.captureResult?.kind === 'saved') showBackupToast('Your session is saved.');
+      else if (data.overview.status.kind === 'current' && data.captureResult?.kind === 'unchanged') showBackupToast('Your session is already up to date.');
+      else if (data.overview.status.kind === 'pending') showBackupToast('Tabs changed during capture. Automatic backup will retry.', icons.Clock3);
+    }
   } catch (error) {
     feedback.replaceChildren(notice(errorMessage(error)));
     settings.showError(errorMessage(error));

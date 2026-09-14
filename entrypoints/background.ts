@@ -2,7 +2,7 @@ import { defineBackground } from 'wxt/utils/define-background';
 import { Repository } from '../src/database';
 import { BackupBusyError, Controller, type CaptureSchedule } from '../src/controller';
 import { scanBrowser, restoreBrowser } from '../src/browser';
-import { errorMessage } from '../src/model';
+import { errorMessage, type CaptureResult } from '../src/model';
 import { HISTORY_INITIAL_LIMIT, HISTORY_PAGE_LIMIT, parseRequest, type Data, type Reply } from '../src/protocol';
 
 export default defineBackground(() =>
@@ -66,14 +66,16 @@ export default defineBackground(() =>
       case 'overview': return { kind: 'overview', overview: await controller.overview() };
       case 'storage-settings': return { kind: 'storage-settings', result: await controller.setStorageSettings(request.settings, request.confirmedRemovalCount) };
       case 'refresh':
-      case 'backup':
-        try { await controller.capture(request.kind === 'backup' ? 'manual' : 'automatic'); }
+      case 'backup': {
+        let captureResult: CaptureResult | undefined;
+        try { captureResult = await controller.capture(request.kind === 'backup' ? 'manual' : 'automatic'); }
         catch (error) {
           if (error instanceof BackupBusyError) throw error;
           // return the error status and saved history after startup recovery fails
         }
         await badge();
-        return { kind: 'overview', overview: await controller.overview() };
+        return { kind: 'overview', overview: await controller.overview(), captureResult };
+      }
       case 'history': return { kind: 'history', items: await controller.repository.list(request.before, request.before ? HISTORY_PAGE_LIMIT : HISTORY_INITIAL_LIMIT) };
       case 'snapshot': return { kind: 'snapshot', snapshot: await controller.repository.get(request.id) };
       case 'rename': return { kind: 'renamed', summary: await controller.repository.rename(request.id, request.name) };

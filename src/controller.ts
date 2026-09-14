@@ -1,7 +1,7 @@
 import { DEFAULT_AUTOMATIC_SETTINGS } from './automatic';
 import { StorageLimitExceededError } from './storage';
 import type { Repository } from './database';
-import { errorMessage, type AutomaticSettings, type AutomaticUpdate, type Overview, type Session, type Snapshot, type Source, type Status, type StorageSettings, type StorageSettingsResult } from './model';
+import { errorMessage, type AutomaticSettings, type AutomaticUpdate, type CaptureResult, type Overview, type Session, type Snapshot, type Source, type Status, type StorageSettings, type StorageSettingsResult } from './model';
 import { restoreSession, type RestorePort } from './restore';
 import { FILE_ACCESS_MESSAGE, fileUrl, restorableUrl, selectWindows, summarize } from './session';
 
@@ -121,7 +121,7 @@ export class Controller {
     await this.capture('automatic');
   }
 
-  async capture(source: Source): Promise<void>
+  async capture(source: Source): Promise<CaptureResult | undefined>
   {
     await this.start(source === 'manual');
     if (this.restoration.kind !== 'idle') {
@@ -132,7 +132,7 @@ export class Controller {
     if (source === 'automatic' && Date.now() < this.retryAfter) return;
     this.stopTimers();
     // fix capture admission before asynchronous work begins
-    await this.enqueue(() => this.performCapture(source));
+    return this.enqueue(() => this.performCapture(source));
   }
 
   private captureFailed(error: unknown, phase: 'scan' | 'write'): void
@@ -146,7 +146,7 @@ export class Controller {
     }
   }
 
-  private async performCapture(source: Source): Promise<void>
+  private async performCapture(source: Source): Promise<CaptureResult | undefined>
   {
     if (source === 'automatic') {
       try { if (!await this.automaticReady()) return; }
@@ -176,6 +176,7 @@ export class Controller {
       this.retryAfter = 0;
       this.status = generation === this.generation
         ? { kind: result.kind === 'empty' ? 'empty' : 'current' } : { kind: 'pending' };
+      return result;
     } catch (error) {
       this.captureFailed(error, 'write');
     }
