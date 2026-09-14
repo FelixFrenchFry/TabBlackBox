@@ -47,13 +47,17 @@ p { margin-top: 6px; }
 .list-header { padding: 9.5px 16px; background: var(--bgColor-muted); display: flex; align-items: center; gap: 8px; }
 .backup-row { position: relative; border-top: 1px solid var(--borderColor-muted); }
 .backup-actions { position: absolute; right: 16px; top: 17px; display: flex; gap: 8px; }
-.backup-summary { display: grid; grid-template-columns: 16px max-content minmax(0, 1fr) minmax(0, 1.25fr) auto; align-items: center; gap: 12px; padding: 10px 164px 10px 16px; cursor: pointer; list-style: none; min-height: 62px; }
+.backup-summary { display: grid; grid-template-columns: 16px max-content minmax(0, 1fr) minmax(0, 1.25fr) auto; align-items: center; gap: 12px; padding: 10px 116px 10px 16px; cursor: pointer; list-style: none; min-height: 62px; }
 .backup-summary::-webkit-details-marker { display: none; }
 .backup-summary:hover { background: var(--bgColor-muted); }
 .backup-summary > svg { color: var(--fgColor-muted); transform: rotate(-90deg); }
 details[open] > .backup-summary > svg { transform: rotate(0); }
 .backup-label { display: flex; flex-direction: column; flex: 1; min-width: 0; gap: 2px; }
-.backup-title { overflow-wrap: anywhere; }
+.backup-name { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.backup-title { min-width: 0; overflow-wrap: anywhere; }
+.session-rename { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--fgColor-muted); }
+.session-rename > svg { width: 14px; height: 14px; }
+.session-rename:hover:not(:disabled) { color: var(--fgColor-default); background: var(--bgColor-neutral-muted); }
 .backup-number { min-width: 48px; max-width: 100px; padding: 6px 8px; border: 1px solid var(--borderColor-default); border-radius: 6px; background: var(--bgColor-muted); color: var(--fgColor-muted); text-align: center; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .backup-date { min-width: 0; font-size: inherit; font-weight: 600; text-align: right; overflow-wrap: anywhere; }
 .session-name-input { display: block; width: 100%; padding: 6px 10px; margin-top: 6px; border: 1px solid var(--borderColor-default); border-radius: 6px; color: var(--fgColor-default); background: var(--bgColor-muted); }

@@ -364,6 +364,7 @@ function row(item: Summary)
   const details = el('details');
   const summary = el('summary', 'backup-summary');
   const label = el('div', 'backup-label');
+  const nameRow = el('div', 'backup-name');
   const title = el('strong', 'backup-title');
   const date = timestamp(item.capturedAt);
   date.className = 'backup-date';
@@ -377,19 +378,21 @@ function row(item: Summary)
     if (title.textContent !== name) title.textContent = name;
   }
   update(item);
-  label.append(title, counts);
+  nameRow.append(title);
+  label.append(nameRow, counts);
   summary.append(icon(icons.ChevronDown), number, label, date, el('span', 'badge', item.source === 'manual' ? 'Manual' : 'Automatic'));
   details.append(summary);
   const restore = button('Restore', icons.RotateCcw, 'button small');
   restore.disabled = sessionDialogLock.active || !canRestore({ tabCount: item.tabCount, backingUp, restoring });
   restoreButtons.set(restore, item.tabCount);
   const actions = el('div', 'backup-actions');
-  const rename = button('', icons.Pencil, 'button small');
+  const rename = button('', icons.Pencil, 'session-rename');
   rename.disabled = sessionDialogLock.active;
   rename.title = `Rename session #${item.number}`;
   rename.setAttribute('aria-label', rename.title);
-  rename.addEventListener('click', () => renameSession(item, rename));
-  actions.append(rename, restore);
+  rename.addEventListener('click', event => { event.preventDefault(); renameSession(item, rename); });
+  nameRow.append(rename);
+  actions.append(restore);
   wrapper.append(details, actions);
   let snapshot: Snapshot | undefined;
   async function load(): Promise<Snapshot>
