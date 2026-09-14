@@ -1,6 +1,7 @@
+import { DEFAULT_AUTOMATIC_SETTINGS } from './automatic';
 import { StorageLimitExceededError } from './storage';
 import type { Repository } from './database';
-import { errorMessage, type Overview, type Session, type Snapshot, type Source, type Status, type StorageSettings, type StorageSettingsResult } from './model';
+import { errorMessage, type AutomaticSettings, type AutomaticUpdate, type Overview, type Session, type Snapshot, type Source, type Status, type StorageSettings, type StorageSettingsResult } from './model';
 import { restoreSession, type RestorePort } from './restore';
 import { restorableUrl, summarize } from './session';
 
@@ -13,10 +14,14 @@ type RestorationState =
   | { kind: 'waiting'; automaticPending: boolean }
   | { kind: 'running' };
 
+export type CaptureSchedule = { readonly id: string; readonly when: number };
+
 export class Controller {
   private currentStatus: Status = { kind: 'initializing' };
   private generation = 0;
+  private automatic: AutomaticSettings = { ...DEFAULT_AUTOMATIC_SETTINGS };
   private timer: ReturnType<typeof setTimeout> | undefined;
+  private scheduledCapture: CaptureSchedule | undefined;
   private firstChange: number | undefined;
   private queue: Promise<void> = Promise.resolve();
   private restoration: RestorationState = { kind: 'idle' };
@@ -29,6 +34,7 @@ export class Controller {
     private readonly scan: () => Promise<Session>,
     private readonly port: RestorePort,
     private readonly onStatusChange: (status: Status) => void = () => {},
+    private readonly scheduleWake: (schedule: CaptureSchedule | null) => void = () => {},
   ) {}
 
   get status(): Status { return this.currentStatus; }
@@ -73,6 +79,8 @@ export class Controller {
 
   stopTimers(): void
   {
+    this.scheduledCapture = undefined;
+    this.scheduleWake(null);
     clearTimeout(this.timer);
     this.timer = undefined;
     this.firstChange = undefined;
@@ -82,6 +90,12 @@ export class Controller {
   {
     this.generation++;
     if (this.restoration.kind === 'running' || Date.now() < this.retryAfter || (this.initializationFailure && Date.now() < this.initializationFailure.retryAt)) return;
+    if (!this.automatic.enabled) { if (this.status.kind !== 'error') this.status = { kind: 'disabled' }; return; }
+    if (this.automatic.pausedUntil !== null && this.automatic.pausedUntil > Date.now()) {
+      if (this.status.kind !== 'error') this.status = { kind: 'paused' };
+      this.scheduleCapture(this.automatic.pausedUntil - Date.now());
+      return;
+    }
     if (this.status.kind !== 'error') this.status = { kind: 'pending' };
     this.firstChange ??= Date.now();
     this.scheduleCapture(Math.max(0, Math.min(2000, this.firstChange + 10_000 - Date.now())));
@@ -89,12 +103,22 @@ export class Controller {
 
   private scheduleCapture(delay: number): void
   {
+    const schedule: CaptureSchedule = { id: crypto.randomUUID(), when: Date.now() + delay };
+    this.scheduledCapture = schedule;
+    this.scheduleWake(schedule);
     clearTimeout(this.timer);
     this.timer = setTimeout(() =>
     {
-      this.stopTimers();
-      void this.capture('automatic').catch(() => { /* startup errors surface in status and retry on the next event or alarm */ });
+      void this.captureScheduled(schedule.id).catch(() => { /* startup errors surface in status and retry on the next event or alarm */ });
     }, delay);
+  }
+
+  async captureScheduled(id: string): Promise<void>
+  {
+    // consume the schedule before yielding so timer and alarm callbacks share one claim
+    if (this.scheduledCapture?.id !== id) return;
+    this.stopTimers();
+    await this.capture('automatic');
   }
 
   async capture(source: Source): Promise<void>
@@ -124,24 +148,74 @@ export class Controller {
 
   private async performCapture(source: Source): Promise<void>
   {
-    const generation = this.generation;
-    // discard scans that become stale while browser state changes
+    if (source === 'automatic') {
+      try { if (!await this.automaticReady()) return; }
+      catch (error) { this.captureFailed(error, 'write'); return; }
+    }
+    let generation: number;
     let session: Session;
-    try {
-      session = await this.scan();
-    } catch (error) {
-      this.captureFailed(error, 'scan');
-      return;
+    // keep manual retries inside the admitted request and ahead of queued restoration
+    for (let attempt = 1; ; attempt++) {
+      generation = this.generation;
+      try {
+        session = await this.scan();
+      } catch (error) {
+        this.captureFailed(error, 'scan');
+        return;
+      }
+      if (generation === this.generation) break;
+      if (source === 'automatic') { this.changed(); return; }
+      if (attempt === 3) {
+        this.captureFailed(new Error('Tabs kept changing during the backup. No backup was saved. Try Back up now again.'), 'scan');
+        return;
+      }
     }
     try {
-      if (generation !== this.generation) { this.changed(); return; }
       const result = await this.repository.capture(session, source, Date.now());
+      if (source === 'manual' && this.automatic.enabled && this.automatic.pausedUntil !== null && this.automatic.pausedUntil > Date.now()) this.scheduleCapture(this.automatic.pausedUntil - Date.now());
       this.retryAfter = 0;
       this.status = generation === this.generation
         ? { kind: result.kind === 'empty' ? 'empty' : 'current' } : { kind: 'pending' };
     } catch (error) {
       this.captureFailed(error, 'write');
     }
+  }
+
+  private async automaticReady(): Promise<boolean>
+  {
+    const metadata = await this.repository.metadata();
+    this.automatic = metadata.automatic;
+    if (!this.automatic.enabled) {
+      this.stopTimers();
+      if (this.status.kind !== 'error') this.status = { kind: 'disabled' };
+      return false;
+    }
+    const now = Date.now();
+    if (this.automatic.pausedUntil !== null && this.automatic.pausedUntil > now) {
+      if (this.status.kind !== 'error') this.status = { kind: 'paused' };
+      this.scheduleCapture(this.automatic.pausedUntil - now);
+      return false;
+    }
+    const due = (metadata.lastSavedAt ?? 0) + this.automatic.intervalMinutes * 60_000;
+    if (metadata.lastSavedAt !== null && due > now) {
+      if (this.status.kind !== 'error' && this.status.kind !== 'current') this.status = { kind: 'pending' };
+      this.scheduleCapture(due - now);
+      return false;
+    }
+    return true;
+  }
+
+  async setAutomaticSettings(update: AutomaticUpdate): Promise<void>
+  {
+    await this.start(true);
+    await this.enqueue(async () => {
+      await this.repository.setAutomaticSettings(update, Date.now());
+      this.automatic = (await this.repository.metadata()).automatic;
+      this.stopTimers();
+      if (this.restoration.kind === 'idle') {
+        if (await this.automaticReady()) this.changed();
+      }
+    });
   }
 
   async overview(): Promise<Overview>

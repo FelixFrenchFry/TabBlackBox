@@ -1,7 +1,8 @@
+import { timestamp } from '../../src/ui/dates';
 import { errorMessage, type Operation, type Overview, type Snapshot, type Summary } from '../../src/model';
 import { restorableUrl } from '../../src/session';
 import { canRestore } from '../../src/ui/restore-state';
-import { setup, brand, button, icons, icon, el, request, statusView, notice, formatTime, plural } from '../../src/ui/shared';
+import { setup, brand, button, icons, icon, el, request, createStatusView, notice, plural } from '../../src/ui/shared';
 import { createRefreshQueue } from '../../src/ui/refresh-queue';
 import { createSettingsView } from '../../src/ui/settings';
 import { HISTORY_INITIAL_LIMIT, HISTORY_PAGE_LIMIT } from '../../src/protocol';
@@ -30,7 +31,8 @@ save.type = 'button';
 const saveLabel = document.createTextNode('Back up now');
 save.append(icon(icons.Save), saveLabel);
 heading.append(titles, save);
-const status = el('div');
+const statusCard = createStatusView();
+const status = statusCard.element;
 const feedback = el('div');
 feedback.setAttribute('aria-live', 'polite');
 const operationRegion = el('div');
@@ -47,7 +49,7 @@ list.append(listHeader, rows);
 const footer = el('footer', 'history-footer');
 footer.append(icon(icons.HardDrive), el('span', '', 'Saved on this device · Older backups are removed according to your storage settings.'));
 main.append(heading, status, feedback, operationRegion, list, more, footer);
-const settings = createSettingsView();
+const settings = createSettingsView(() => { void refresh('backup'); });
 root.append(header, nav, main, settings.element);
 
 function showView(): void
@@ -212,7 +214,9 @@ function row(item: Summary)
   const details = el('details');
   const summary = el('summary', 'backup-summary');
   const label = el('div', 'backup-label');
-  label.append(el('strong', '', formatTime(item.capturedAt)), el('span', 'muted', `${plural(item.windowCount, 'window')} · ${plural(item.tabCount, 'tab')}`));
+  const date = el('strong');
+  date.append(timestamp(item.capturedAt));
+  label.append(date, el('span', 'muted', `${plural(item.windowCount, 'window')} · ${plural(item.tabCount, 'tab')}`));
   summary.append(icon(icons.ChevronDown), label, el('span', 'badge', item.source === 'manual' ? 'Manual' : 'Automatic'));
   details.append(summary);
   const restore = button('Restore', icons.RotateCcw, 'button small');
@@ -311,6 +315,7 @@ async function loadHistory(reset: boolean): Promise<void>
 function updateSave(): void
 {
   save.disabled = backingUp || restoring;
+  settings.setBackupState(backingUp, restoring);
   const label = backingUp ? 'Backing up…' : 'Back up now';
   if (saveLabel.data !== label) saveLabel.data = label;
 }
@@ -323,7 +328,7 @@ function updateRestoreButtons(): void
 function applyOverview(overview: Overview): void
 {
   settings.update(overview);
-  status.replaceChildren(statusView(overview));
+  statusCard.update(overview);
   count.textContent = String(overview.metadata.count);
   restoring = overview.status.kind === 'restoring';
   updateSave();

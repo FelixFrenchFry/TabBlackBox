@@ -2,6 +2,7 @@ import { createElement, Archive, ArrowUpRight, Check, ChevronDown, CircleAlert, 
 import type { Data, Reply, Request } from '../protocol';
 import type { Overview } from '../model';
 import { initializeAppearance } from './appearance';
+import { initializeDates, setTimestamp, timestamp } from './dates';
 import './style.css';
 
 export const icons = { Archive, ArrowUpRight, Check, ChevronDown, CircleAlert, Clock3, FileText, Globe, HardDrive, History, LoaderCircle, LockKeyhole, Monitor, Palette, Pin, RotateCcw, Save, Settings, ShieldCheck };
@@ -38,6 +39,7 @@ export async function request(message: Request): Promise<Data>
 export function setup(): HTMLElement
 {
   initializeAppearance();
+  initializeDates();
   const root = document.getElementById('app');
   if (!root) throw new Error('Application root is missing.');
   return root;
@@ -53,27 +55,74 @@ export function brand(): HTMLElement
   return item;
 }
 
-export function formatTime(value: number | null): string
+export function createStatusView()
 {
-  return value === null ? 'Not yet saved' : new Date(value).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
-}
-
-export function statusView(overview: Overview): HTMLElement
-{
-  const { status, metadata, latest } = overview;
-  const view = el('section', `status-card status-${status.kind}`);
-  view.setAttribute('aria-label', 'Backup status');
+  const element = el('section', 'status-card');
+  element.setAttribute('aria-label', 'Backup status');
   const title = el('div', 'status-title');
-  const label = status.kind === 'error' ? 'Backup needs attention' : status.kind === 'pending' ? 'Changes waiting to be saved' : status.kind === 'restoring' ? 'Restoring session' : status.kind === 'empty' ? 'No eligible tabs open' : status.kind === 'current' ? 'Your tabs are backed up' : 'Checking your tabs';
-  title.append(icon(status.kind === 'error' ? icons.CircleAlert : status.kind === 'current' ? icons.ShieldCheck : icons.Clock3, 20), el('strong', '', label));
-  const detail = status.kind === 'error' ? status.message : status.kind === 'current' && latest ? `${latest.windowCount} windows · ${latest.tabCount} tabs in the latest backup` : status.kind === 'restoring' ? 'Opening your saved tabs in new windows.' : status.kind === 'empty' ? 'Your previous backups are still available.' : 'Automatic backups run when your tabs change.';
-  view.append(title, el('p', 'muted', detail));
+  const titleText = el('span');
+  const heading = el('strong');
+  const resumeAt = el('span', 'muted pause-resume-time');
+  const resumeTime = timestamp(null);
+  resumeAt.append(document.createTextNode(' ('), resumeTime, document.createTextNode(')'));
+  resumeAt.hidden = true;
+  titleText.append(heading, resumeAt);
+  let glyph = icons.Clock3;
+  let glyphNode = icon(glyph, 20);
+  title.append(glyphNode, titleText);
+  const description = el('p', 'muted');
+  const detailCopy = el('span');
+  const scheduledCopy = el('span', 'scheduled-backup');
+  const scheduledTime = timestamp(null);
+  const scheduledValue = el('strong', 'scheduled-backup-time');
+  scheduledValue.append(scheduledTime);
+  scheduledCopy.append(el('span', 'scheduled-backup-label', 'Next automatic backup:'), scheduledValue);
+  scheduledCopy.hidden = true;
+  description.append(detailCopy, scheduledCopy);
   const times = el('div', 'status-times');
-  times.append(el('span', '', `Last saved ${formatTime(metadata.lastSavedAt)}`), el('span', '', `Last checked ${formatTime(metadata.lastCheckedAt)}`));
-  view.append(times);
-  return view;
+  const saved = el('span', '', 'Last saved ');
+  const savedTime = timestamp(null);
+  saved.append(savedTime);
+  const checked = el('span', '', 'Last checked ');
+  const checkedTime = timestamp(null);
+  checked.append(checkedTime);
+  times.append(saved, checked);
+  element.append(title, description, times);
+  return {
+    element,
+    update(overview: Overview): void
+    {
+      const { metadata, latest, status } = overview;
+      const automatic = metadata.automatic;
+      const suspended = status.kind !== 'error' && status.kind !== 'restoring'
+        ? !automatic.enabled ? 'disabled' : automatic.pausedUntil !== null && automatic.pausedUntil > Date.now() ? 'paused' : null
+        : null;
+      const due = metadata.lastSavedAt === null ? null : metadata.lastSavedAt + automatic.intervalMinutes * 60_000;
+      const waiting = suspended === null && status.kind === 'pending' && due !== null && due > Date.now();
+      const label = waiting ? 'Changes waiting for the next backup' : suspended === 'disabled' ? 'Automatic backups are off' : suspended === 'paused' ? 'Automatic backups are paused' : status.kind === 'error' ? 'Backup needs attention' : status.kind === 'pending' ? 'Changes waiting to be saved' : status.kind === 'restoring' ? 'Restoring session' : status.kind === 'empty' ? 'No eligible tabs open' : status.kind === 'current' ? 'Your tabs are backed up' : 'Checking your tabs';
+      const detail = suspended === 'disabled' ? 'Use Back up now to save your tabs manually.' : suspended === 'paused' ? 'Automatic backups will resume when the pause ends. Manual backups remain available.' : status.kind === 'error' ? status.message : status.kind === 'current' && latest ? `${latest.windowCount} windows · ${latest.tabCount} tabs in the latest backup` : status.kind === 'restoring' ? 'Opening your saved tabs in new windows.' : status.kind === 'empty' ? 'Your previous backups are still available.' : 'Automatic backups run when your tabs change.';
+      const className = 'status-card status-' + (suspended ?? status.kind);
+      if (element.className !== className) element.className = className;
+      if (heading.textContent !== label) heading.textContent = label;
+      if (detailCopy.textContent !== detail) detailCopy.textContent = detail;
+      detailCopy.hidden = waiting;
+      scheduledCopy.hidden = !waiting;
+      setTimestamp(scheduledTime, waiting ? due : null);
+      const nextGlyph = suspended ? icons.Clock3 : status.kind === 'error' ? icons.CircleAlert : status.kind === 'current' ? icons.ShieldCheck : icons.Clock3;
+      if (glyph !== nextGlyph) {
+        const nextNode = icon(nextGlyph, 20);
+        glyphNode.replaceWith(nextNode);
+        glyphNode = nextNode;
+        glyph = nextGlyph;
+      }
+      // preserve time nodes across polls so only the date clock advances unchanged timestamps
+      resumeAt.hidden = suspended !== 'paused';
+      setTimestamp(resumeTime, suspended === 'paused' ? automatic.pausedUntil : null);
+      setTimestamp(savedTime, metadata.lastSavedAt);
+      setTimestamp(checkedTime, metadata.lastCheckedAt);
+    },
+  };
 }
-
 export function notice(message: string): HTMLElement
 {
   const node = el('div', 'notice error-notice', message);

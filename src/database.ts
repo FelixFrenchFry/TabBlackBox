@@ -1,5 +1,6 @@
+import { applyAutomaticUpdate, DEFAULT_AUTOMATIC_SETTINGS } from './automatic';
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
-import type { CaptureResult, HistoryCursor, Metadata, Operation, Session, Snapshot, Source, StorageSettings, StorageSettingsResult, Summary } from './model';
+import type { AutomaticUpdate, CaptureResult, HistoryCursor, Metadata, Operation, Session, Snapshot, Source, StorageSettings, StorageSettingsResult, Summary } from './model';
 import { canonicalSession, summarize } from './session';
 import { DEFAULT_STORAGE_SETTINGS, retentionPlan } from './storage';
 
@@ -9,7 +10,7 @@ interface BackupDatabase extends DBSchema {
   metadata: { key: string; value: Metadata };
 }
 
-const initialMetadata = (): Metadata => ({ latestId: null, lastSavedAt: null, lastCheckedAt: null, bytes: 0, count: 0, operation: null });
+const initialMetadata = (): Metadata => ({ automatic: { ...DEFAULT_AUTOMATIC_SETTINGS }, settings: { ...DEFAULT_STORAGE_SETTINGS }, latestId: null, lastSavedAt: null, lastCheckedAt: null, bytes: 0, count: 0, operation: null });
 
 export class Repository {
   private connection: Promise<IDBPDatabase<BackupDatabase>> | null = null;
@@ -46,7 +47,6 @@ export class Repository {
   {
     const snapshot = await (await this.db()).get('snapshots', id);
     if (!snapshot) throw new Error('This backup is no longer available. Refresh history.');
-    if (snapshot.schemaVersion !== 1) throw new Error('This backup needs a newer version of TabBlackBox.');
     return snapshot;
   }
 
@@ -93,14 +93,14 @@ export class Repository {
       if (session.windows.length) {
         if (latest && canonicalSession(latest) === canonicalSession(session)) result = { kind: 'unchanged' };
         else {
-          candidate = { ...session, id: crypto.randomUUID(), schemaVersion: 1, capturedAt: now, source };
+          candidate = { ...session, id: crypto.randomUUID(), capturedAt: now, source };
           result = { kind: 'saved', id: candidate.id };
         }
       }
       // include the prospective backup in the deletion count before any writes
       const history = await tx.objectStore('summaries').getAll();
       if (candidate) history.push(summarize(candidate));
-      const settings = change?.settings ?? metadata.settings ?? DEFAULT_STORAGE_SETTINGS;
+      const settings = change?.settings ?? metadata.settings;
       const plan = retentionPlan(history, candidate?.id ?? metadata.latestId, settings, now, this.budget);
       if (change && plan.removeIds.length > change.confirmedRemovalCount) {
         await tx.done;
@@ -115,7 +115,7 @@ export class Repository {
         await tx.objectStore('summaries').add(summarize(candidate));
         Object.assign(metadata, { latestId: candidate.id, lastSavedAt: now });
       }
-      if (change) metadata.settings = change.settings;
+      metadata.settings = settings;
       Object.assign(metadata, { bytes: plan.bytes, count: plan.count });
       metadata.lastCheckedAt = now;
       await tx.objectStore('metadata').put(metadata, 'state');
@@ -123,6 +123,22 @@ export class Repository {
       return result;
     } catch (error) {
       try { tx.abort(); } catch { /* abort may already have happened on the failed request */ }
+      await tx.done.catch(() => undefined);
+      throw error;
+    }
+  }
+
+  async setAutomaticSettings(update: AutomaticUpdate, now: number): Promise<void>
+  {
+    // merge one preference within the metadata transaction so other pages cannot overwrite it
+    const tx = (await this.db()).transaction('metadata', 'readwrite');
+    try {
+      const metadata = (await tx.store.get('state')) ?? initialMetadata();
+      metadata.automatic = applyAutomaticUpdate(metadata.automatic, update, now);
+      await tx.store.put(metadata, 'state');
+      await tx.done;
+    } catch (error) {
+      try { tx.abort(); } catch { /* transaction may already be aborted */ }
       await tx.done.catch(() => undefined);
       throw error;
     }

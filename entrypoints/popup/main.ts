@@ -1,5 +1,5 @@
 import { errorMessage } from '../../src/model';
-import { setup, brand, button, icon, icons, el, request, statusView, notice } from '../../src/ui/shared';
+import { setup, brand, button, icon, icons, el, request, createStatusView, notice } from '../../src/ui/shared';
 import { createRefreshQueue } from '../../src/ui/refresh-queue';
 
 const root = setup();
@@ -11,7 +11,9 @@ settings.title = 'Settings';
 headerActions.append(el('span', 'badge', 'Local'), settings);
 header.append(brand(), headerActions);
 const content = el('main', 'popup-content');
-const status = el('div', 'status-region');
+const statusCard = createStatusView();
+const status = statusCard.element;
+status.classList.add('status-region');
 const feedback = el('div', 'popup-feedback');
 feedback.setAttribute('aria-live', 'polite');
 const save = el('button', 'button primary popup-save');
@@ -54,7 +56,7 @@ const refresh = createRefreshQueue(async kind =>
   try {
     const data = await request({ kind });
     if (data.kind !== 'overview') throw new Error('Unexpected background response.');
-    status.replaceChildren(statusView(data.overview));
+    statusCard.update(data.overview);
     restoring = data.overview.status.kind === 'restoring';
     updateSave();
     if (kind === 'backup' && data.overview.status.kind === 'current') {

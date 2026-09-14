@@ -1,7 +1,9 @@
+import { automaticSettings } from './automatic-settings';
+import { readDateFormat, setDateFormat } from './dates';
 import { errorMessage, type Overview, type StorageSettings } from '../model';
 import { DEFAULT_STORAGE_SETTINGS, MB, parseStorageSettings } from '../storage';
 import { readAppearance, setAppearance } from './appearance';
-import { button, el, icon, icons, notice, plural, request, statusView } from './shared';
+import { button, el, icon, icons, notice, plural, request, createStatusView } from './shared';
 
 function settingsPanel(title: string, glyph: Parameters<typeof icon>[0])
 {
@@ -59,7 +61,7 @@ function confirmCleanup(count: number): Promise<boolean>
   });
 }
 
-export function createSettingsView()
+export function createSettingsView(backUpNow: () => void)
 {
   const element = el('main', 'history-main');
   const heading = el('div', 'page-heading');
@@ -97,7 +99,34 @@ export function createSettingsView()
   select.setAttribute('aria-describedby', themeExplanation.id);
   themeDescription.append(label, themeExplanation);
   themeRow.append(themeDescription, selectControl);
-  appearanceBody.append(themeRow, appearanceFeedback);
+  const dateRow = el('div', 'settings-row appearance-date-row');
+  const dateText = el('div', 'setting-description');
+  const dateLabel = el('label', 'setting-name', 'Date format');
+  dateLabel.htmlFor = 'date-format';
+  const dateExplanation = el('p', 'muted', 'Choose between exact timestamps like "12. Sept., 2026, 20:55:07", or relative timestamps like “17 minutes ago”, or a combination of them.');
+  dateExplanation.id = 'date-format-description';
+  dateText.append(dateLabel, dateExplanation);
+  const dateSelect = el('select', 'settings-select');
+  dateSelect.id = 'date-format';
+  dateSelect.setAttribute('aria-describedby', dateExplanation.id);
+  for (const [value, title] of [['exact', 'Exact'], ['relative', 'Relative'], ['combination', 'Combination']] as const) {
+    const option = el('option', '', title);
+    option.value = value;
+    dateSelect.append(option);
+  }
+  const syncDates = () => { dateSelect.value = readDateFormat(); };
+  syncDates();
+  window.addEventListener('storage', syncDates);
+  dateSelect.addEventListener('change', () => {
+    const value = dateSelect.value;
+    if (value !== 'exact' && value !== 'relative' && value !== 'combination') return;
+    try { setDateFormat(value); appearanceFeedback.replaceChildren(); }
+    catch (error) { syncDates(); appearanceFeedback.replaceChildren(notice(errorMessage(error))); }
+  });
+  const dateControl = el('div', 'settings-select-control');
+  dateControl.append(dateSelect, icon(icons.ChevronDown));
+  dateRow.append(dateText, dateControl);
+  appearanceBody.append(themeRow, dateRow, appearanceFeedback);
 
   const { element: storage, body: storageBody } = settingsPanel('Storage', icons.HardDrive);
   const usage = el('p', 'settings-storage muted', 'Checking storage…');
@@ -134,7 +163,13 @@ export function createSettingsView()
   const countLimit = optionalLimit(count);
   const optionalLimits = [ageLimit, countLimit];
   const form = el('form', 'storage-settings-form');
-  const save = button('Save storage settings', icons.Save, 'button primary');
+  const save = el('button', 'button primary storage-save');
+  const saveLabel = document.createTextNode('Save storage settings');
+  const saveIcons = { idle: icon(icons.Save), saving: icon(icons.LoaderCircle), saved: icon(icons.Check) };
+  saveIcons.saving.classList.add('save-spinner');
+  let displayedState: keyof typeof saveIcons = 'idle';
+  save.append(saveIcons.idle, saveLabel);
+  save.setAttribute('aria-live', 'polite');
   save.type = 'submit';
   save.disabled = true;
   const storageFeedback = el('div');
@@ -152,6 +187,7 @@ export function createSettingsView()
   }
   let dirty = false;
   let saving = false;
+  let saved = false;
   let baseline: StorageSettings | undefined;
   const draft = () => ({
     retentionDays: ageLimit.toggle.checked ? age.input.valueAsNumber : null,
@@ -162,7 +198,16 @@ export function createSettingsView()
   {
     const current = draft();
     dirty = baseline !== undefined && (current.retentionDays !== baseline.retentionDays || current.maxBackups !== baseline.maxBackups || current.maxStorageMB !== baseline.maxStorageMB);
-    save.disabled = !baseline || !dirty || saving;
+    const state = saving ? 'saving' : saved ? 'saved' : 'idle';
+    save.disabled = !baseline || !dirty || saving || saved;
+    save.setAttribute('aria-busy', String(saving));
+    save.classList.toggle('is-saving', state === 'saving');
+    save.classList.toggle('is-saved', state === 'saved');
+    if (state !== displayedState) {
+      saveIcons[displayedState].replaceWith(saveIcons[state]);
+      displayedState = state;
+    }
+    saveLabel.data = saving ? 'Saving…' : saved ? 'Saved' : 'Save storage settings';
   }
   const actions = el('div', 'storage-settings-actions');
   actions.append(save);
@@ -189,33 +234,44 @@ export function createSettingsView()
         }
         dirty = false;
         baseline = settings;
-        storageFeedback.replaceChildren(el('p', 'muted', 'Storage settings saved.'));
+        saved = true;
         const data = await request({ kind: 'overview' });
         if (data.kind === 'overview') view.update(data.overview);
       } catch (error) { storageFeedback.replaceChildren(notice(errorMessage(error))); }
       finally {
         saving = false;
         updateControls();
-        save.disabled = !dirty;
-        save.focus();
+        if (saved) setTimeout(() => { saved = false; updateSave(); }, 2000);
       }
     })();
   });
   storageBody.append(usageRow, meter, form);
 
   const { element: automatic, body: automaticBody } = settingsPanel('Automatic backups', icons.Clock3);
-  const backupStatus = el('div');
-  backupStatus.append(el('p', 'muted', 'Checking automatic backups…'));
-  automaticBody.append(el('p', 'muted', 'Enabled automatically. Changes are saved after your tabs settle, with a periodic check every minute. Identical sessions are saved only once.'), backupStatus);
+  const backupStatus = createStatusView();
+  const statusContent = el('div', 'automatic-status-content');
+  statusContent.append(...backupStatus.element.childNodes);
+  const backUp = el('button', 'button primary');
+  backUp.type = 'button';
+  const backUpLabel = document.createTextNode('Back up now');
+  backUp.append(icon(icons.Save), backUpLabel);
+  backUp.disabled = true;
+  backUp.addEventListener('click', () => { if (!backUp.disabled) backUpNow(); });
+  backupStatus.element.classList.add('automatic-status');
+  const statusWrapper = el('div', 'automatic-status-wrapper');
+  statusWrapper.append(statusContent, backUp);
+  backupStatus.element.append(statusWrapper);
+  const automaticControls = automaticSettings(overview => view.update(overview));
+  automaticBody.append(automaticControls.element, backupStatus.element);
   const feedback = el('div');
   feedback.setAttribute('aria-live', 'polite');
-  element.append(heading, appearance, feedback, storage, automatic);
+  element.append(heading, feedback, automatic, storage, appearance);
   const view = {
     element,
     update(overview: Overview): void
     {
       feedback.replaceChildren();
-      const settings = overview.metadata.settings ?? DEFAULT_STORAGE_SETTINGS;
+      const settings = overview.metadata.settings;
       const mb = overview.metadata.bytes / MB;
       const used = mb > 0 && mb < 0.01 ? '<0.01' : mb.toLocaleString(undefined, { maximumFractionDigits: 2 });
       const percent = mb / settings.maxStorageMB * 100;
@@ -226,14 +282,23 @@ export function createSettingsView()
       meter.value = overview.metadata.bytes;
       meter.setAttribute('aria-valuetext', `${used} MB used, ${percentText}% of storage limit`);
       if (!dirty && !saving) {
-        age.input.value = String(settings.retentionDays ?? DEFAULT_STORAGE_SETTINGS.retentionDays);
+        age.input.value = String(settings.retentionDays ?? 30);
         ageLimit.toggle.checked = settings.retentionDays !== null;
-        count.input.value = String(settings.maxBackups ?? DEFAULT_STORAGE_SETTINGS.maxBackups);
+        count.input.value = String(settings.maxBackups ?? 2000);
         countLimit.toggle.checked = settings.maxBackups !== null;
         capacity.input.value = String(settings.maxStorageMB);
       }
-      if (!saving) { baseline = settings; updateControls(); }
-      backupStatus.replaceChildren(statusView(overview));
+      if (!saving) {
+        baseline = settings;
+        updateControls();
+      }
+      automaticControls.update(overview);
+      backupStatus.update(overview);
+    },
+    setBackupState(backingUp: boolean, restoring: boolean): void {
+      backUp.disabled = backingUp || restoring;
+      const label = backingUp ? 'Backing up…' : 'Back up now';
+      if (backUpLabel.data !== label) backUpLabel.data = label;
     },
     showError(message: string): void { feedback.replaceChildren(notice(message)); },
   };

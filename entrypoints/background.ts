@@ -1,13 +1,29 @@
 import { defineBackground } from 'wxt/utils/define-background';
 import { Repository } from '../src/database';
-import { BackupBusyError, Controller } from '../src/controller';
+import { BackupBusyError, Controller, type CaptureSchedule } from '../src/controller';
 import { scanBrowser, restoreBrowser } from '../src/browser';
 import { errorMessage } from '../src/model';
 import { HISTORY_INITIAL_LIMIT, HISTORY_PAGE_LIMIT, parseRequest, type Data, type Reply } from '../src/protocol';
 
 export default defineBackground(() =>
 {
-  const controller = new Controller(new Repository(), scanBrowser, restoreBrowser, () => { void badge(); });
+  const wakePrefix = 'automatic-backup-wake:';
+  let activeWake: string | undefined;
+  // startup reconciliation rebuilds schedules after removing alarms from a previous worker
+  let alarmWrites = Promise.resolve().then(async () => {
+    for (const alarm of await chrome.alarms.getAll()) {
+      if (alarm.name.startsWith(wakePrefix)) await chrome.alarms.clear(alarm.name);
+    }
+  }).catch(() => { /* stale alarm identities cannot claim a new worker's schedule */ });
+  // alarms recover suspended timers but may fire later than the requested deadline
+  const scheduleWake = (schedule: CaptureSchedule | null) => {
+    alarmWrites = alarmWrites.then(async () => {
+      if (activeWake !== undefined) await chrome.alarms.clear(activeWake);
+      activeWake = schedule === null ? undefined : `${wakePrefix}${schedule.id}`;
+      if (schedule !== null && activeWake !== undefined) await chrome.alarms.create(activeWake, { when: schedule.when });
+    }).catch(() => { /* periodic reconciliation remains the fallback */ });
+  };
+  const controller = new Controller(new Repository(), scanBrowser, restoreBrowser, () => { void badge(); }, scheduleWake);
   const changed = () => controller.changed();
   const alarmName = 'reconcile-session';
 
@@ -37,12 +53,16 @@ export default defineBackground(() =>
   chrome.alarms.onAlarm.addListener(alarm =>
   {
     if (alarm.name === alarmName) void controller.capture('automatic').then(badge, badge);
+    else if (alarm.name.startsWith(wakePrefix)) void controller.captureScheduled(alarm.name.slice(wakePrefix.length)).then(badge, badge);
   });
 
   async function handle(input: unknown): Promise<Data>
   {
     const request = parseRequest(input);
     switch (request.kind) {
+      case 'automatic-settings':
+        await controller.setAutomaticSettings(request.update);
+        return { kind: 'overview', overview: await controller.overview() };
       case 'overview': return { kind: 'overview', overview: await controller.overview() };
       case 'storage-settings': return { kind: 'storage-settings', result: await controller.setStorageSettings(request.settings, request.confirmedRemovalCount) };
       case 'refresh':
