@@ -5,7 +5,7 @@ import { parseStorageSettings } from './storage';
 export const HISTORY_INITIAL_LIMIT = 25;
 export const HISTORY_PAGE_LIMIT = 50;
 
-export type Request = { kind: 'automatic-settings'; update: AutomaticUpdate } | { kind: 'overview' | 'refresh' | 'backup' } | { kind: 'history'; before: HistoryCursor | null } | { kind: 'snapshot' | 'restore'; id: string } | { kind: 'storage-settings'; settings: StorageSettings; confirmedRemovalCount: number };
+export type Request = { kind: 'automatic-settings'; update: AutomaticUpdate } | { kind: 'overview' | 'refresh' | 'backup' } | { kind: 'history'; before: HistoryCursor | null } | { kind: 'snapshot' | 'restore'; id: string } | { kind: 'restore-window'; id: string; windowIndex: number } | { kind: 'storage-settings'; settings: StorageSettings; confirmedRemovalCount: number };
 export type Data = { kind: 'overview'; overview: Overview } | { kind: 'history'; items: Summary[] } | { kind: 'snapshot'; snapshot: Snapshot } | { kind: 'accepted' } | { kind: 'storage-settings'; result: StorageSettingsResult };
 export type Reply = { ok: true; data: Data } | { ok: false; error: string };
 
@@ -26,6 +26,8 @@ export function parseRequest(input: unknown): Request
       }
     }
     if ((input.kind === 'snapshot' || input.kind === 'restore') && 'id' in input && typeof input.id === 'string' && input.id.length > 0 && input.id.length <= 100) return { kind: input.kind, id: input.id };
+    if (input.kind === 'restore-window' && 'id' in input && typeof input.id === 'string' && input.id.length > 0 && input.id.length <= 100 &&
+        'windowIndex' in input && typeof input.windowIndex === 'number' && Number.isSafeInteger(input.windowIndex) && input.windowIndex >= 0) return { kind: input.kind, id: input.id, windowIndex: input.windowIndex };
   }
   throw new Error('Invalid request.');
 }

@@ -1,5 +1,5 @@
 import { errorMessage, type Operation, type RestoreProgress, type SavedGroup, type Snapshot } from './model';
-import { restorableUrl } from './session';
+import { restorableUrl, selectWindows } from './session';
 
 export interface RestorePort {
   fileAccess(): Promise<boolean>;
@@ -9,9 +9,10 @@ export interface RestorePort {
   groupTabs(windowId: number, tabIds: number[], group: SavedGroup): Promise<void>;
 }
 
-export async function restoreSession(snapshot: Snapshot, port: RestorePort, persist: (operation: Operation) => Promise<void>, fileAccess = false): Promise<Operation>
+export async function restoreSession(snapshot: Snapshot, port: RestorePort, persist: (operation: Operation) => Promise<void>, fileAccess = false, windowIndex?: number): Promise<Operation>
 {
-  const allTabs = snapshot.windows.flatMap(window => window.tabs);
+  const windows = selectWindows(snapshot, windowIndex);
+  const allTabs = windows.flatMap(window => window.tabs);
   const progress: RestoreProgress = {
     snapshotId: snapshot.id, startedAt: Date.now(), opened: 0,
     skipped: allTabs.filter(tab => !restorableUrl(tab.url, fileAccess)).length,
@@ -22,7 +23,8 @@ export async function restoreSession(snapshot: Snapshot, port: RestorePort, pers
   await save();
 
   // restore windows in saved order and persist progress after each operation
-  for (const [windowIndex, window] of snapshot.windows.entries()) {
+  for (const [index, window] of windows.entries()) {
+    const windowNumber = (windowIndex ?? index) + 1;
     const tabs = window.tabs.filter((tab): tab is typeof tab & { url: string } => restorableUrl(tab.url, fileAccess));
     const first = tabs[0];
     if (!first) continue;
@@ -30,7 +32,7 @@ export async function restoreSession(snapshot: Snapshot, port: RestorePort, pers
     try { created = await port.createWindow(first.url); }
     catch (error) {
       progress.failed += tabs.length;
-      recordError(`Window ${windowIndex + 1}: ${errorMessage(error)}`);
+      recordError(`Window ${windowNumber}: ${errorMessage(error)}`);
       await save();
       continue;
     }
@@ -54,7 +56,7 @@ export async function restoreSession(snapshot: Snapshot, port: RestorePort, pers
         addGroup(tab.group, tabId);
       } catch (error) {
         progress.failed++;
-        recordError(`Window ${windowIndex + 1}, ${tab.title || tab.url}: ${errorMessage(error)}`);
+        recordError(`Window ${windowNumber}, ${tab.title || tab.url}: ${errorMessage(error)}`);
       }
       // let persistence errors escape instead of treating them as browser failures
       await save();
@@ -66,7 +68,7 @@ export async function restoreSession(snapshot: Snapshot, port: RestorePort, pers
         await port.groupTabs(created.windowId, tabIds, group);
       } catch (error) {
         progress.groupErrors++;
-        recordError(`Window ${windowIndex + 1} group: ${errorMessage(error)}`);
+        recordError(`Window ${windowNumber} group: ${errorMessage(error)}`);
       }
       await save();
     }

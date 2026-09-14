@@ -37,6 +37,14 @@ export function canonicalSession(session: Session): string
   return JSON.stringify(session.windows.map(window => JSON.stringify(window)).sort());
 }
 
+export function selectWindows(snapshot: Snapshot, windowIndex?: number): SavedWindow[]
+{
+  if (windowIndex === undefined) return snapshot.windows;
+  const window = snapshot.windows[windowIndex];
+  if (!Number.isSafeInteger(windowIndex) || windowIndex < 0 || !window) throw new Error('This saved window is no longer available. Refresh history.');
+  return [window];
+}
+
 export function fileUrl(url: string | null): boolean
 {
   if (!url) return false;

@@ -1,7 +1,7 @@
 import { timestamp } from '../../src/ui/dates';
 import { errorMessage, type Operation, type Overview, type Snapshot, type Summary } from '../../src/model';
-import { FILE_ACCESS_MESSAGE, fileUrl, restorableUrl } from '../../src/session';
-import { canRestore } from '../../src/ui/restore-state';
+import { FILE_ACCESS_MESSAGE, fileUrl, restorableUrl, selectWindows } from '../../src/session';
+import { canRestore, createRestoreDialogLock } from '../../src/ui/restore-state';
 import { setup, brand, button, icons, icon, el, request, createStatusView, notice, plural } from '../../src/ui/shared';
 import { createRefreshQueue } from '../../src/ui/refresh-queue';
 import { createSettingsView } from '../../src/ui/settings';
@@ -25,7 +25,7 @@ nav.append(active, settingsLink);
 const main = el('main', 'history-main');
 const heading = el('div', 'page-heading');
 const titles = el('div');
-titles.append(el('h1', '', 'Backup history'), el('p', 'muted', 'Pick up where you left off. Restore a saved session in new windows.'));
+titles.append(el('h1', '', 'Backup history'), el('p', 'muted', 'TabBlackBox automatically saves your browser sessions, including the URLs and arrangement of your open tabs and windows. Expand a saved session to browse its tabs, open individual links, or restore the entire session in your browser.'));
 const save = el('button', 'button primary');
 save.type = 'button';
 const saveLabel = document.createTextNode('Back up now');
@@ -77,6 +77,7 @@ let operationKey = '';
 let fileAccess = false;
 const restoreButtons = new Map<HTMLButtonElement, number>();
 const sessionRows = new Map<string, ReturnType<typeof row>>();
+const restoreDialogLock = createRestoreDialogLock();
 
 async function updateFileAccess(): Promise<void>
 {
@@ -121,52 +122,71 @@ function renderOperation(operation: Operation | null): void
   operationRegion.append(section);
 }
 
-async function confirmRestore(snapshot: Snapshot, trigger: HTMLButtonElement): Promise<void>
+async function confirmRestore(snapshot: Snapshot, trigger: HTMLButtonElement, windowIndex?: number): Promise<void>
 {
-  if (restoring || backingUp) return;
-  await updateFileAccess();
-  if (restoring || backingUp) return;
-  const tabs = snapshot.windows.flatMap(window => window.tabs);
-  const supported = tabs.filter(tab => restorableUrl(tab.url, fileAccess)).length;
-  const windows = snapshot.windows.filter(window => window.tabs.some(tab => restorableUrl(tab.url, fileAccess))).length;
-  const blockedFiles = !fileAccess ? tabs.filter(tab => fileUrl(tab.url)).length : 0;
-  const dialog = el('dialog', 'restore-dialog');
-  dialog.setAttribute('aria-labelledby', 'restore-title');
-  const title = el('h2', '', 'Restore this session?');
-  title.id = 'restore-title';
-  dialog.append(title, el('p', '', `${plural(supported, 'tab')} will open in ${plural(windows, 'new window')}. Your current windows will stay open.`));
-  if (blockedFiles) {
-    dialog.append(el('p', 'muted', `${plural(blockedFiles, 'local file')} will be skipped until file access is enabled.`), fileAccessNotice());
-    dialog.append(el('p', 'muted', 'After enabling access, close this dialog and choose Restore again.'));
-  }
-  if (tabs.length > supported + blockedFiles) dialog.append(el('p', 'muted', `${plural(tabs.length - supported - blockedFiles, 'unsupported tab')} will be skipped. Their saved URLs remain in the preview.`));
-  dialog.append(el('p', 'muted', 'Restoring a session again creates another copy of its tabs.'));
-  const actions = el('div', 'dialog-actions');
-  const cancel = button('Cancel', icons.Check);
-  const confirm = button('Restore session', icons.RotateCcw, 'button primary');
-  confirm.disabled = supported === 0;
-  actions.append(cancel, confirm);
-  dialog.append(actions);
-  root.append(dialog);
-  cancel.addEventListener('click', () => dialog.close());
-  dialog.addEventListener('close', () => { dialog.remove(); trigger.focus(); });
-  confirm.addEventListener('click', () =>
-  {
-    confirm.disabled = true;
-    void (async () =>
+  if (restoring || backingUp || !restoreDialogLock.acquire()) return;
+  let shown = false;
+  let createdDialog: HTMLDialogElement | undefined;
+  try {
+    updateRestoreButtons();
+    await updateFileAccess();
+    if (restoring || backingUp) return;
+    const selected = selectWindows(snapshot, windowIndex);
+    const tabs = selected.flatMap(window => window.tabs);
+    const supported = tabs.filter(tab => restorableUrl(tab.url, fileAccess)).length;
+    const windows = selected.filter(window => window.tabs.some(tab => restorableUrl(tab.url, fileAccess))).length;
+    const blockedFiles = !fileAccess ? tabs.filter(tab => fileUrl(tab.url)).length : 0;
+    const dialog = el('dialog', 'restore-dialog');
+    createdDialog = dialog;
+    dialog.setAttribute('aria-labelledby', 'restore-title');
+    const title = el('h2', '', windowIndex === undefined ? 'Restore this session?' : `Restore window ${windowIndex + 1}?`);
+    title.id = 'restore-title';
+    dialog.append(title, el('p', '', `${plural(supported, 'tab')} will open in ${plural(windows, 'new window')}. Your current windows will stay open.`));
+    if (blockedFiles) {
+      dialog.append(el('p', 'muted', `${plural(blockedFiles, 'local file')} will be skipped until file access is enabled.`), fileAccessNotice());
+      dialog.append(el('p', 'muted', 'After enabling access, close this dialog and choose Restore again.'));
+    }
+    if (tabs.length > supported + blockedFiles) dialog.append(el('p', 'muted', `${plural(tabs.length - supported - blockedFiles, 'unsupported tab')} will be skipped. Their saved URLs remain in the preview.`));
+    dialog.append(el('p', 'muted', windowIndex === undefined ? 'Restoring a session again creates another copy of its tabs.' : 'Restoring a window again creates another copy of its tabs.'));
+    const actions = el('div', 'dialog-actions');
+    const cancel = button('Cancel', icons.Check);
+    const confirm = button(windowIndex === undefined ? 'Restore session' : `Restore window ${windowIndex + 1}`, icons.RotateCcw, 'button primary');
+    confirm.disabled = supported === 0;
+    actions.append(cancel, confirm);
+    dialog.append(actions);
+    root.append(dialog);
+    cancel.addEventListener('click', () => dialog.close());
+    dialog.addEventListener('close', () => {
+      restoreDialogLock.release();
+      dialog.remove();
+      trigger.focus();
+      updateRestoreButtons();
+    }, { once: true });
+    confirm.addEventListener('click', () =>
     {
-      try {
-        await request({ kind: 'restore', id: snapshot.id });
-        restoring = true;
-        updateRestoreButtons();
-        updateSave();
-        dialog.close();
-        await refresh('overview');
-      } catch (error) { dialog.append(notice(errorMessage(error))); confirm.disabled = false; }
-    })();
-  });
-  dialog.showModal();
-  cancel.focus();
+      confirm.disabled = true;
+      void (async () =>
+      {
+        try {
+          await request(windowIndex === undefined ? { kind: 'restore', id: snapshot.id } : { kind: 'restore-window', id: snapshot.id, windowIndex });
+          restoring = true;
+          updateRestoreButtons();
+          updateSave();
+          dialog.close();
+          await refresh('overview');
+        } catch (error) { dialog.append(notice(errorMessage(error))); confirm.disabled = false; }
+      })();
+    });
+    dialog.showModal();
+    shown = true;
+    cancel.focus();
+  } finally {
+    if (!shown) {
+      restoreDialogLock.release();
+      createdDialog?.remove();
+      updateRestoreButtons();
+    }
+  }
 }
 
 function favicon(url: string | null): HTMLElement
@@ -204,6 +224,14 @@ function preview(snapshot: Snapshot): HTMLElement
     const section = el('section', 'window-preview');
     const heading = el('h3', 'window-heading');
     heading.append(icon(icons.Monitor), document.createTextNode(`Window ${index + 1}`), el('span', 'muted', plural(window.tabs.length, 'tab')));
+    const restore = button(`Restore window ${index + 1}`, icons.RotateCcw, 'button small window-restore');
+    restore.disabled = !canRestore({ tabCount: window.tabs.length, backingUp, restoring });
+    restoreButtons.set(restore, window.tabs.length);
+    restore.addEventListener('click', () => {
+      restore.disabled = true;
+      void confirmRestore(snapshot, restore, index).catch((error: unknown) => feedback.replaceChildren(notice(errorMessage(error)))).finally(updateRestoreButtons);
+    });
+    heading.append(restore);
     section.append(heading);
     const tabs = el('ul', 'tab-list');
     for (const tab of window.tabs) {
@@ -288,13 +316,16 @@ function row(item: Summary)
   {
     if (details.open && !rendered) {
       rendered = true;
-      void load().then(value => details.append(preview(value)), (error: unknown) => { rendered = false; details.append(notice(errorMessage(error))); });
+      void load().then(value => {
+        if (!details.isConnected) return;
+        details.append(preview(value));
+      }, (error: unknown) => { rendered = false; details.append(notice(errorMessage(error))); });
     }
   });
   restore.addEventListener('click', () =>
   {
     restore.disabled = true;
-    void load().then(value => confirmRestore(value, restore)).catch((error: unknown) => feedback.replaceChildren(notice(errorMessage(error)))).finally(() => { restore.disabled = !canRestore({ tabCount: item.tabCount, backingUp, restoring }); });
+    void load().then(value => confirmRestore(value, restore)).catch((error: unknown) => feedback.replaceChildren(notice(errorMessage(error)))).finally(updateRestoreButtons);
   });
   return { element: wrapper, details, restore };
 }
@@ -306,6 +337,7 @@ function renderHistory(): void
     if (ids.has(id)) continue;
     saved.element.remove();
     restoreButtons.delete(saved.restore);
+    for (const button of saved.element.querySelectorAll<HTMLButtonElement>('.window-restore')) restoreButtons.delete(button);
     sessionRows.delete(id);
   }
   if (!sessionRows.size) rows.replaceChildren();
@@ -372,7 +404,7 @@ function updateSave(): void
 
 function updateRestoreButtons(): void
 {
-  for (const [button, tabCount] of restoreButtons) button.disabled = !canRestore({ tabCount, backingUp, restoring });
+  for (const [button, tabCount] of restoreButtons) button.disabled = restoreDialogLock.active || !canRestore({ tabCount, backingUp, restoring });
 }
 
 function applyOverview(overview: Overview): void

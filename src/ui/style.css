@@ -56,7 +56,8 @@ details[open] > .backup-summary > svg { transform: rotate(0); }
 .backup-label > .muted { font-size: 12px; }
 .snapshot-preview { border-top: 1px solid var(--borderColor-muted); padding: 6px 16px 13px 44px; }
 .window-preview + .window-preview { margin-top: 13px; }
-.window-heading { display: flex; align-items: center; gap: 8px; padding: 9px 0; }
+.window-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 9px 0; }
+.window-restore { margin-left: auto; }
 .window-heading .muted { font-weight: 400; font-size: 12px; }
 .tab-list { list-style: none; padding: 0; margin: 0; }
 .tab-row { display: flex; align-items: center; gap: 10px; padding: 6.5px 0; border-top: 1px solid var(--borderColor-muted); }

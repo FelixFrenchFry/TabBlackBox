@@ -3,7 +3,7 @@ import { StorageLimitExceededError } from './storage';
 import type { Repository } from './database';
 import { errorMessage, type AutomaticSettings, type AutomaticUpdate, type Overview, type Session, type Snapshot, type Source, type Status, type StorageSettings, type StorageSettingsResult } from './model';
 import { restoreSession, type RestorePort } from './restore';
-import { FILE_ACCESS_MESSAGE, fileUrl, restorableUrl, summarize } from './session';
+import { FILE_ACCESS_MESSAGE, fileUrl, restorableUrl, selectWindows, summarize } from './session';
 
 export class BackupBusyError extends Error {
   constructor() { super('Restoration in progress. Try backing up again when it finishes.'); }
@@ -264,7 +264,7 @@ export class Controller {
     });
   }
 
-  async restore(id: string): Promise<void>
+  async restore(id: string, windowIndex?: number): Promise<void>
   {
     await this.start(true);
     if (this.restoration.kind !== 'idle') throw new Error('A restoration is already in progress.');
@@ -279,10 +279,11 @@ export class Controller {
         let fileAccess = false;
         try {
           snapshot = await this.repository.get(id);
-          const hasFiles = snapshot.windows.some(window => window.tabs.some(tab => fileUrl(tab.url)));
+          const windows = selectWindows(snapshot, windowIndex);
+          const hasFiles = windows.some(window => window.tabs.some(tab => fileUrl(tab.url)));
           // check permission before opening browser windows for local files
           if (hasFiles) fileAccess = await this.port.fileAccess();
-          if (!snapshot.windows.some(window => window.tabs.some(tab => restorableUrl(tab.url, fileAccess)))) throw new Error(hasFiles ? FILE_ACCESS_MESSAGE : 'This backup has no supported tabs to restore.');
+          if (!windows.some(window => window.tabs.some(tab => restorableUrl(tab.url, fileAccess)))) throw new Error(hasFiles ? FILE_ACCESS_MESSAGE : 'This backup has no supported tabs to restore.');
         } catch (error) {
           this.restoration = { kind: 'idle' };
           // retain the debounce window for captures deferred during validation
@@ -295,7 +296,7 @@ export class Controller {
         this.status = { kind: 'restoring' };
         resolve();
         try {
-          await restoreSession(snapshot, this.port, operation => this.repository.setOperation(operation), fileAccess);
+          await restoreSession(snapshot, this.port, operation => this.repository.setOperation(operation), fileAccess, windowIndex);
         } catch (error) {
           try {
             await this.repository.recoverOperation();

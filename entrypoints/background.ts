@@ -79,6 +79,9 @@ export default defineBackground(() =>
       case 'restore':
         await controller.restore(request.id);
         return { kind: 'accepted' };
+      case 'restore-window':
+        await controller.restore(request.id, request.windowIndex);
+        return { kind: 'accepted' };
     }
   }
 
