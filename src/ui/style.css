@@ -46,13 +46,17 @@ p { margin-top: 6px; }
 .backup-list { border: 1px solid var(--borderColor-default); border-radius: 6px; overflow: hidden; }
 .list-header { padding: 9.5px 16px; background: var(--bgColor-muted); display: flex; align-items: center; gap: 8px; }
 .backup-row { position: relative; border-top: 1px solid var(--borderColor-muted); }
-.backup-row > .button { position: absolute; right: 16px; top: 17px; }
-.backup-summary { display: flex; align-items: center; gap: 12px; padding: 10px 114px 10px 16px; cursor: pointer; list-style: none; min-height: 62px; }
+.backup-actions { position: absolute; right: 16px; top: 17px; display: flex; gap: 8px; }
+.backup-summary { display: flex; align-items: center; gap: 12px; padding: 10px 164px 10px 16px; cursor: pointer; list-style: none; min-height: 62px; }
 .backup-summary::-webkit-details-marker { display: none; }
 .backup-summary:hover { background: var(--bgColor-muted); }
 .backup-summary > svg { color: var(--fgColor-muted); transform: rotate(-90deg); }
 details[open] > .backup-summary > svg { transform: rotate(0); }
 .backup-label { display: flex; flex-direction: column; flex: 1; min-width: 0; gap: 2px; }
+.backup-title { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 6px; overflow-wrap: anywhere; }
+.backup-title > time, .backup-title > .muted { font-size: 12px; }
+.session-name-input { display: block; width: 100%; padding: 6px 10px; margin-top: 6px; border: 1px solid var(--borderColor-default); border-radius: 6px; color: var(--fgColor-default); background: var(--bgColor-muted); }
+.restore-dialog > form { margin-top: 12px; }
 .backup-label > .muted { font-size: 12px; }
 .snapshot-preview { border-top: 1px solid var(--borderColor-muted); padding: 6px 16px 13px 44px; }
 .window-preview + .window-preview { margin-top: 13px; }

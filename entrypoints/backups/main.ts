@@ -1,11 +1,11 @@
 import { timestamp } from '../../src/ui/dates';
 import { errorMessage, type Operation, type Overview, type Snapshot, type Summary } from '../../src/model';
 import { FILE_ACCESS_MESSAGE, fileUrl, restorableUrl, selectWindows } from '../../src/session';
-import { canRestore, createRestoreDialogLock } from '../../src/ui/restore-state';
+import { canRestore, createSessionDialogLock } from '../../src/ui/restore-state';
 import { setup, brand, button, icons, icon, el, request, createStatusView, notice, plural } from '../../src/ui/shared';
 import { createRefreshQueue } from '../../src/ui/refresh-queue';
 import { createSettingsView } from '../../src/ui/settings';
-import { HISTORY_INITIAL_LIMIT, HISTORY_PAGE_LIMIT } from '../../src/protocol';
+import { HISTORY_INITIAL_LIMIT, HISTORY_PAGE_LIMIT, SESSION_NAME_LIMIT } from '../../src/protocol';
 
 const root = setup();
 const header = el('header', 'app-header');
@@ -71,13 +71,14 @@ let items: Summary[] = [];
 let historyGeneration = 0;
 let latestId: string | null = null;
 let historyCount: number | null = null;
+let historyRevision: number | null = null;
 let restoring = false;
 let backingUp = false;
 let operationKey = '';
 let fileAccess = false;
 const restoreButtons = new Map<HTMLButtonElement, number>();
 const sessionRows = new Map<string, ReturnType<typeof row>>();
-const restoreDialogLock = createRestoreDialogLock();
+const sessionDialogLock = createSessionDialogLock();
 
 async function updateFileAccess(): Promise<void>
 {
@@ -122,13 +123,15 @@ function renderOperation(operation: Operation | null): void
   operationRegion.append(section);
 }
 
-async function confirmRestore(snapshot: Snapshot, trigger: HTMLButtonElement, windowIndex?: number): Promise<void>
+async function confirmRestore(load: () => Snapshot | Promise<Snapshot>, trigger: HTMLButtonElement, windowIndex?: number): Promise<void>
 {
-  if (restoring || backingUp || !restoreDialogLock.acquire()) return;
+  // reserve the dialog before loading snapshots or checking browser permissions
+  if (restoring || backingUp || !sessionDialogLock.acquire()) return;
   let shown = false;
   let createdDialog: HTMLDialogElement | undefined;
   try {
-    updateRestoreButtons();
+    updateDialogButtons();
+    const snapshot = await load();
     await updateFileAccess();
     if (restoring || backingUp) return;
     const selected = selectWindows(snapshot, windowIndex);
@@ -157,10 +160,10 @@ async function confirmRestore(snapshot: Snapshot, trigger: HTMLButtonElement, wi
     root.append(dialog);
     cancel.addEventListener('click', () => dialog.close());
     dialog.addEventListener('close', () => {
-      restoreDialogLock.release();
+      sessionDialogLock.release();
       dialog.remove();
+      updateDialogButtons();
       trigger.focus();
-      updateRestoreButtons();
     }, { once: true });
     confirm.addEventListener('click', () =>
     {
@@ -170,7 +173,7 @@ async function confirmRestore(snapshot: Snapshot, trigger: HTMLButtonElement, wi
         try {
           await request(windowIndex === undefined ? { kind: 'restore', id: snapshot.id } : { kind: 'restore-window', id: snapshot.id, windowIndex });
           restoring = true;
-          updateRestoreButtons();
+          updateDialogButtons();
           updateSave();
           dialog.close();
           await refresh('overview');
@@ -182,9 +185,9 @@ async function confirmRestore(snapshot: Snapshot, trigger: HTMLButtonElement, wi
     cancel.focus();
   } finally {
     if (!shown) {
-      restoreDialogLock.release();
+      sessionDialogLock.release();
       createdDialog?.remove();
-      updateRestoreButtons();
+      updateDialogButtons();
     }
   }
 }
@@ -225,11 +228,10 @@ function preview(snapshot: Snapshot): HTMLElement
     const heading = el('h3', 'window-heading');
     heading.append(icon(icons.Monitor), document.createTextNode(`Window ${index + 1}`), el('span', 'muted', plural(window.tabs.length, 'tab')));
     const restore = button(`Restore window ${index + 1}`, icons.RotateCcw, 'button small window-restore');
-    restore.disabled = !canRestore({ tabCount: window.tabs.length, backingUp, restoring });
+    restore.disabled = sessionDialogLock.active || !canRestore({ tabCount: window.tabs.length, backingUp, restoring });
     restoreButtons.set(restore, window.tabs.length);
     restore.addEventListener('click', () => {
-      restore.disabled = true;
-      void confirmRestore(snapshot, restore, index).catch((error: unknown) => feedback.replaceChildren(notice(errorMessage(error)))).finally(updateRestoreButtons);
+      void confirmRestore(() => snapshot, restore, index).catch((error: unknown) => feedback.replaceChildren(notice(errorMessage(error))));
     });
     heading.append(restore);
     section.append(heading);
@@ -287,21 +289,118 @@ function preview(snapshot: Snapshot): HTMLElement
   return content;
 }
 
+function renameSession(item: Summary, trigger: HTMLButtonElement): void
+{
+  const dialog = el('dialog', 'restore-dialog');
+  const title = el('h2', '', 'Rename this session');
+  title.id = 'rename-title';
+  dialog.setAttribute('aria-labelledby', title.id);
+  const form = el('form');
+  const label = el('label', 'setting-name', 'Session name');
+  label.htmlFor = 'session-name';
+  const input = el('input', 'session-name-input');
+  input.id = label.htmlFor;
+  input.type = 'text';
+  input.maxLength = SESSION_NAME_LIMIT;
+  input.value = item.name ?? '';
+  input.placeholder = `Session #${item.number}`;
+  const help = el('p', 'muted', `Leave blank to use Session #${item.number}.`);
+  help.id = 'session-name-description';
+  input.setAttribute('aria-describedby', help.id);
+  const feedback = el('div');
+  feedback.setAttribute('aria-live', 'polite');
+  const actions = el('div', 'dialog-actions');
+  const cancel = button('Cancel', icons.Check);
+  const save = button('Save name', icons.Check, 'button primary');
+  save.type = 'submit';
+  actions.append(cancel, save);
+  form.append(label, input, help, feedback, actions);
+  dialog.append(title, form);
+  let saving = false;
+  cancel.addEventListener('click', () => dialog.close());
+  dialog.addEventListener('cancel', event => { if (saving) event.preventDefault(); });
+  dialog.addEventListener('close', () => {
+    sessionDialogLock.release();
+    dialog.remove();
+    updateDialogButtons();
+    trigger.focus();
+  }, { once: true });
+  form.addEventListener('submit', event => {
+    event.preventDefault();
+    if (saving) return;
+    saving = true;
+    input.disabled = cancel.disabled = save.disabled = true;
+    feedback.replaceChildren();
+    void (async () => {
+      try {
+        const data = await request({ kind: 'rename', id: item.id, name: input.value });
+        if (data.kind !== 'renamed') throw new Error('Unexpected rename response.');
+        items = items.map(value => value.id === item.id ? data.summary : value);
+        sessionRows.get(item.id)?.update(data.summary);
+        dialog.close();
+      } catch (error) { feedback.replaceChildren(notice(errorMessage(error))); }
+      finally { saving = false; input.disabled = cancel.disabled = save.disabled = false; }
+    })();
+  });
+  if (!sessionDialogLock.acquire()) return;
+  try {
+    updateDialogButtons();
+    root.append(dialog);
+    dialog.showModal();
+    input.focus();
+    input.select();
+  } catch (error) {
+    dialog.remove();
+    sessionDialogLock.release();
+    updateDialogButtons();
+    throw error;
+  }
+}
+
 function row(item: Summary)
 {
   const wrapper = el('article', 'backup-row');
   const details = el('details');
   const summary = el('summary', 'backup-summary');
   const label = el('div', 'backup-label');
-  const date = el('strong');
-  date.append(timestamp(item.capturedAt));
-  label.append(date, el('span', 'muted', `${plural(item.windowCount, 'window')} · ${plural(item.tabCount, 'tab')}`));
+  const titleRow = el('span', 'backup-title');
+  const title = el('strong');
+  const date = timestamp(item.capturedAt);
+  const number = el('span', 'muted', `· #${item.number}`);
+  const counts = document.createTextNode(`${plural(item.windowCount, 'window')} · ${plural(item.tabCount, 'tab')}`);
+  const description = el('span', 'muted');
+  let displayedName: string | null | undefined;
+  function update(value: Summary): void
+  {
+    item = value;
+    if (displayedName === item.name) return;
+    displayedName = item.name;
+    title.textContent = item.name ?? `Session #${item.number}`;
+    titleRow.replaceChildren(title);
+    description.replaceChildren();
+    if (item.name !== null) {
+      titleRow.append(number);
+      description.append(date, document.createTextNode(' · '), counts);
+    } else {
+      titleRow.append(el('span', 'muted', '·'), date);
+      description.append(counts);
+    }
+  }
+  update(item);
+  label.append(titleRow, description);
   summary.append(icon(icons.ChevronDown), label, el('span', 'badge', item.source === 'manual' ? 'Manual' : 'Automatic'));
   details.append(summary);
   const restore = button('Restore', icons.RotateCcw, 'button small');
-  restore.disabled = !canRestore({ tabCount: item.tabCount, backingUp, restoring });
+  restore.disabled = sessionDialogLock.active || !canRestore({ tabCount: item.tabCount, backingUp, restoring });
   restoreButtons.set(restore, item.tabCount);
-  wrapper.append(details, restore);
+  const actions = el('div', 'backup-actions');
+  const rename = button('', icons.Pencil, 'button small');
+  rename.disabled = sessionDialogLock.active;
+  rename.title = `Rename session #${item.number}`;
+  rename.setAttribute('aria-label', rename.title);
+  rename.addEventListener('click', () => renameSession(item, rename));
+  actions.append(rename, restore);
+  wrapper.append(details, actions);
   let snapshot: Snapshot | undefined;
   async function load(): Promise<Snapshot>
   {
@@ -324,10 +423,9 @@ function row(item: Summary)
   });
   restore.addEventListener('click', () =>
   {
-    restore.disabled = true;
-    void load().then(value => confirmRestore(value, restore)).catch((error: unknown) => feedback.replaceChildren(notice(errorMessage(error)))).finally(updateRestoreButtons);
+    void confirmRestore(load, restore).catch((error: unknown) => feedback.replaceChildren(notice(errorMessage(error))));
   });
-  return { element: wrapper, details, restore };
+  return { element: wrapper, details, restore, rename, update };
 }
 
 function renderHistory(): void
@@ -348,7 +446,7 @@ function renderHistory(): void
     if (!saved) {
       saved = row(item);
       sessionRows.set(item.id, saved);
-    }
+    } else saved.update(item);
     if (saved.element === next) next = next.nextElementSibling;
     else rows.insertBefore(saved.element, next);
   }
@@ -359,7 +457,7 @@ function renderHistory(): void
   }
 }
 
-async function loadHistory(reset: boolean): Promise<void>
+async function loadHistory(reset: boolean, preserveLoaded = false): Promise<void>
 {
   const generation = reset ? ++historyGeneration : historyGeneration;
   const last = reset ? undefined : items.at(-1);
@@ -371,9 +469,9 @@ async function loadHistory(reset: boolean): Promise<void>
     let page = data.items;
     let pageLimit = last ? HISTORY_PAGE_LIMIT : HISTORY_INITIAL_LIMIT;
     const loaded = [...page];
-    // refresh through the oldest expanded session before updating the visible list
+    // retain loaded rows during renames and expanded sessions during new backups
     while (reset && page.length === pageLimit) {
-      const oldestOpen = items.findLast(item => sessionRows.get(item.id)?.details.open);
+      const oldestOpen = preserveLoaded ? items.at(-1) : items.findLast(item => sessionRows.get(item.id)?.details.open);
       const end = loaded.at(-1);
       if (!oldestOpen || !end || end.capturedAt < oldestOpen.capturedAt || (end.capturedAt === oldestOpen.capturedAt && end.id <= oldestOpen.id)) break;
       const older = await request({ kind: 'history', before: { capturedAt: end.capturedAt, id: end.id } });
@@ -402,9 +500,10 @@ function updateSave(): void
   if (saveLabel.data !== label) saveLabel.data = label;
 }
 
-function updateRestoreButtons(): void
+function updateDialogButtons(): void
 {
-  for (const [button, tabCount] of restoreButtons) button.disabled = restoreDialogLock.active || !canRestore({ tabCount, backingUp, restoring });
+  for (const [button, tabCount] of restoreButtons) button.disabled = sessionDialogLock.active || !canRestore({ tabCount, backingUp, restoring });
+  for (const saved of sessionRows.values()) saved.rename.disabled = sessionDialogLock.active;
 }
 
 function applyOverview(overview: Overview): void
@@ -414,7 +513,7 @@ function applyOverview(overview: Overview): void
   count.textContent = String(overview.metadata.count);
   restoring = overview.status.kind === 'restoring';
   updateSave();
-  updateRestoreButtons();
+  updateDialogButtons();
   renderOperation(overview.metadata.operation);
 }
 
@@ -426,10 +525,11 @@ const refresh = createRefreshQueue(async kind =>
     if (data.kind !== 'overview') throw new Error('Unexpected background response.');
     await updateFileAccess();
     applyOverview(data.overview);
-    if (latestId !== data.overview.metadata.latestId || historyCount !== data.overview.metadata.count || !rows.childElementCount) {
-      await loadHistory(true);
+    if (latestId !== data.overview.metadata.latestId || historyCount !== data.overview.metadata.count || historyRevision !== data.overview.metadata.historyRevision || !rows.childElementCount) {
+      await loadHistory(true, historyRevision !== null && historyRevision !== data.overview.metadata.historyRevision);
       latestId = data.overview.metadata.latestId;
       historyCount = data.overview.metadata.count;
+      historyRevision = data.overview.metadata.historyRevision;
       feedback.replaceChildren();
     }
     if (kind === 'backup') feedback.replaceChildren(el('p', 'muted', data.overview.status.kind === 'current' ? 'Current session is saved. Identical backups are kept only once.' : data.overview.status.kind === 'pending' ? 'Tabs changed during capture. Automatic backup will retry.' : ''));
@@ -437,7 +537,7 @@ const refresh = createRefreshQueue(async kind =>
     feedback.replaceChildren(notice(errorMessage(error)));
     settings.showError(errorMessage(error));
   }
-}, value => { backingUp = value; updateSave(); updateRestoreButtons(); });
+}, value => { backingUp = value; updateSave(); updateDialogButtons(); });
 save.addEventListener('click', () => { void refresh('backup'); });
 more.addEventListener('click', () =>
 {

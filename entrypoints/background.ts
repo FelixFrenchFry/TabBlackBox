@@ -76,6 +76,7 @@ export default defineBackground(() =>
         return { kind: 'overview', overview: await controller.overview() };
       case 'history': return { kind: 'history', items: await controller.repository.list(request.before, request.before ? HISTORY_PAGE_LIMIT : HISTORY_INITIAL_LIMIT) };
       case 'snapshot': return { kind: 'snapshot', snapshot: await controller.repository.get(request.id) };
+      case 'rename': return { kind: 'renamed', summary: await controller.repository.rename(request.id, request.name) };
       case 'restore':
         await controller.restore(request.id);
         return { kind: 'accepted' };

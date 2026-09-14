@@ -10,13 +10,13 @@ export function canRestore({ tabCount, backingUp, restoring }: RestoreAvailabili
   return tabCount > 0 && !backingUp && !restoring;
 }
 
-export type RestoreDialogLock = {
+export type SessionDialogLock = {
   readonly active: boolean;
   acquire(): boolean;
   release(): void;
 };
 
-export function createRestoreDialogLock(): RestoreDialogLock
+export function createSessionDialogLock(): SessionDialogLock
 {
   let active = false;
   return {

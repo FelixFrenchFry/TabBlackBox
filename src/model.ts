@@ -4,8 +4,8 @@ export type SavedGroup = { name: string; color: GroupColor; collapsed: boolean }
 export type SavedWindow = { tabs: SavedTab[]; groups: SavedGroup[] };
 export type Session = { windows: SavedWindow[] };
 export type Source = 'automatic' | 'manual';
-export type Snapshot = Session & { id: string; capturedAt: number; source: Source };
-export type Summary = Pick<Snapshot, 'id' | 'capturedAt' | 'source'> & {
+export type Snapshot = Session & { id: string; number: number; name: string | null; capturedAt: number; source: Source };
+export type Summary = Pick<Snapshot, 'id' | 'number' | 'name' | 'capturedAt' | 'source'> & {
   windowCount: number; tabCount: number; supportedCount: number; bytes: number;
 };
 export type HistoryCursor = Pick<Summary, 'capturedAt' | 'id'>;
@@ -28,6 +28,7 @@ export type Metadata = {
   settings: StorageSettings;
   latestId: string | null; lastSavedAt: number | null; lastCheckedAt: number | null;
   bytes: number; count: number; operation: Operation | null;
+  lastSessionNumber: number; historyRevision: number;
 };
 export type StorageSettings = { retentionDays: number | null; maxBackups: number | null; maxStorageMB: number };
 export type StorageSettingsResult = { kind: 'saved' } | { kind: 'confirmation'; removeCount: number };

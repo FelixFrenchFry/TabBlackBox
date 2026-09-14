@@ -2,7 +2,7 @@ import { applyAutomaticUpdate, DEFAULT_AUTOMATIC_SETTINGS } from './automatic';
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 import type { AutomaticUpdate, CaptureResult, HistoryCursor, Metadata, Operation, Session, Snapshot, Source, StorageSettings, StorageSettingsResult, Summary } from './model';
 import { canonicalSession, summarize } from './session';
-import { DEFAULT_STORAGE_SETTINGS, retentionPlan } from './storage';
+import { DEFAULT_STORAGE_SETTINGS, MB, retentionPlan } from './storage';
 
 interface BackupDatabase extends DBSchema {
   snapshots: { key: string; value: Snapshot };
@@ -10,7 +10,7 @@ interface BackupDatabase extends DBSchema {
   metadata: { key: string; value: Metadata };
 }
 
-const initialMetadata = (): Metadata => ({ automatic: { ...DEFAULT_AUTOMATIC_SETTINGS }, settings: { ...DEFAULT_STORAGE_SETTINGS }, latestId: null, lastSavedAt: null, lastCheckedAt: null, bytes: 0, count: 0, operation: null });
+const initialMetadata = (): Metadata => ({ automatic: { ...DEFAULT_AUTOMATIC_SETTINGS }, settings: { ...DEFAULT_STORAGE_SETTINGS }, latestId: null, lastSavedAt: null, lastCheckedAt: null, bytes: 0, count: 0, operation: null, lastSessionNumber: 0, historyRevision: 0 });
 
 export class Repository {
   private connection: Promise<IDBPDatabase<BackupDatabase>> | null = null;
@@ -93,7 +93,9 @@ export class Repository {
       if (session.windows.length) {
         if (latest && canonicalSession(latest) === canonicalSession(session)) result = { kind: 'unchanged' };
         else {
-          candidate = { ...session, id: crypto.randomUUID(), capturedAt: now, source };
+          const number = metadata.lastSessionNumber + 1;
+          if (!Number.isSafeInteger(number) || number < 1) throw new Error('Invalid session number. Reset the prototype backup data before using this build.');
+          candidate = { ...session, id: crypto.randomUUID(), number, name: null, capturedAt: now, source };
           result = { kind: 'saved', id: candidate.id };
         }
       }
@@ -113,7 +115,8 @@ export class Repository {
       if (candidate) {
         await tx.objectStore('snapshots').add(candidate);
         await tx.objectStore('summaries').add(summarize(candidate));
-        Object.assign(metadata, { latestId: candidate.id, lastSavedAt: now });
+        // commit the number with the snapshot so failed or unchanged captures do not consume it
+        Object.assign(metadata, { latestId: candidate.id, lastSavedAt: now, lastSessionNumber: candidate.number });
       }
       metadata.settings = settings;
       Object.assign(metadata, { bytes: plan.bytes, count: plan.count });
@@ -123,6 +126,35 @@ export class Repository {
       return result;
     } catch (error) {
       try { tx.abort(); } catch { /* abort may already have happened on the failed request */ }
+      await tx.done.catch(() => undefined);
+      throw error;
+    }
+  }
+
+  async rename(id: string, name: string | null): Promise<Summary>
+  {
+    // update labels and byte accounting together without capturing or applying retention
+    const tx = (await this.db()).transaction(['snapshots', 'summaries', 'metadata'], 'readwrite');
+    try {
+      const snapshot = await tx.objectStore('snapshots').get(id);
+      if (!snapshot) throw new Error('This backup is no longer available. Refresh history.');
+      const metadata = (await tx.objectStore('metadata').get('state')) ?? initialMetadata();
+      const previous = summarize(snapshot);
+      snapshot.name = name;
+      const summary = summarize(snapshot);
+      const bytes = metadata.bytes + summary.bytes - previous.bytes;
+      if (bytes > (this.budget ?? metadata.settings.maxStorageMB * MB) && bytes > metadata.bytes) throw new Error('There is not enough backup storage for this name. Shorten it or increase the storage limit.');
+      if (previous.name !== name) {
+        await tx.objectStore('snapshots').put(snapshot);
+        await tx.objectStore('summaries').put(summary);
+        metadata.bytes = bytes;
+        metadata.historyRevision++;
+        await tx.objectStore('metadata').put(metadata, 'state');
+      }
+      await tx.done;
+      return summary;
+    } catch (error) {
+      try { tx.abort(); } catch { /* transaction may already be aborted */ }
       await tx.done.catch(() => undefined);
       throw error;
     }

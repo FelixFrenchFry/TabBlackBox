@@ -4,14 +4,20 @@ import { parseStorageSettings } from './storage';
 
 export const HISTORY_INITIAL_LIMIT = 25;
 export const HISTORY_PAGE_LIMIT = 50;
+export const SESSION_NAME_LIMIT = 100;
 
-export type Request = { kind: 'automatic-settings'; update: AutomaticUpdate } | { kind: 'overview' | 'refresh' | 'backup' } | { kind: 'history'; before: HistoryCursor | null } | { kind: 'snapshot' | 'restore'; id: string } | { kind: 'restore-window'; id: string; windowIndex: number } | { kind: 'storage-settings'; settings: StorageSettings; confirmedRemovalCount: number };
-export type Data = { kind: 'overview'; overview: Overview } | { kind: 'history'; items: Summary[] } | { kind: 'snapshot'; snapshot: Snapshot } | { kind: 'accepted' } | { kind: 'storage-settings'; result: StorageSettingsResult };
+export type Request = { kind: 'automatic-settings'; update: AutomaticUpdate } | { kind: 'overview' | 'refresh' | 'backup' } | { kind: 'history'; before: HistoryCursor | null } | { kind: 'snapshot' | 'restore'; id: string } | { kind: 'rename'; id: string; name: string | null } | { kind: 'restore-window'; id: string; windowIndex: number } | { kind: 'storage-settings'; settings: StorageSettings; confirmedRemovalCount: number };
+export type Data = { kind: 'overview'; overview: Overview } | { kind: 'history'; items: Summary[] } | { kind: 'snapshot'; snapshot: Snapshot } | { kind: 'renamed'; summary: Summary } | { kind: 'accepted' } | { kind: 'storage-settings'; result: StorageSettingsResult };
 export type Reply = { ok: true; data: Data } | { ok: false; error: string };
 
 export function parseRequest(input: unknown): Request
 {
   if (typeof input === 'object' && input !== null && 'kind' in input) {
+    if (input.kind === 'rename' && 'id' in input && typeof input.id === 'string' && input.id.length > 0 && input.id.length <= 100 && 'name' in input && (input.name === null || typeof input.name === 'string')) {
+      const name = input.name?.trim() || null;
+      if (name !== null && name.length > SESSION_NAME_LIMIT) throw new Error(`Session names must be ${SESSION_NAME_LIMIT} characters or fewer.`);
+      return { kind: 'rename', id: input.id, name };
+    }
     if (input.kind === 'automatic-settings' && 'update' in input) return { kind: 'automatic-settings', update: parseAutomaticUpdate(input.update) };
     if (input.kind === 'storage-settings' && 'settings' in input && 'confirmedRemovalCount' in input && typeof input.confirmedRemovalCount === 'number' && Number.isSafeInteger(input.confirmedRemovalCount) && input.confirmedRemovalCount >= 0) {
       return { kind: 'storage-settings', settings: parseStorageSettings(input.settings), confirmedRemovalCount: input.confirmedRemovalCount };
