@@ -266,6 +266,19 @@ export class Controller {
     });
   }
 
+  async deleteSaved(id: string): Promise<void>
+  {
+    await this.start(true);
+    if (this.restoration.kind !== 'idle') throw new Error('Wait for restoration to finish before deleting saved sessions.');
+    await this.enqueue(async () => {
+      if (!await this.repository.deleteSaved(id)) return;
+      // recheck coverage after deleting the latest backup while honoring automatic settings
+      this.stopTimers();
+      if (this.status.kind !== 'error') this.status = { kind: 'pending' };
+      await this.performCapture('automatic');
+    });
+  }
+
   async restore(id: string, windowIndex?: number): Promise<void>
   {
     await this.start(true);

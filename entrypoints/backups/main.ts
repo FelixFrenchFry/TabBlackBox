@@ -30,7 +30,7 @@ nav.append(active, settingsLink);
 const main = el('main', 'history-main');
 const heading = el('div', 'page-heading');
 const titles = el('div');
-titles.append(el('h1', '', 'Backup history'), el('p', 'muted', 'TabBlackBox automatically saves your browser sessions, including the URLs and arrangement of your open tabs and windows. Expand a saved session to browse its tabs, open individual links, or restore the entire session in your browser.'));
+titles.append(el('h1', '', 'Backup history'), el('p', 'muted', 'Browse manual and automatic browser session backups. Expand a backup to view its tabs, windows, and tab groups, open individual URLs, or restore the session.'));
 const backup = createBackupButton(() => { void refresh('backup'); });
 heading.append(titles);
 const statusCard = createStatusView();
@@ -67,8 +67,8 @@ const importSessions = button('Import', icons.Upload);
 const archiveActions = el('div', 'archive-toolbar');
 const search = el('input', 'session-name-input archive-search');
 search.type = 'search';
-search.placeholder = 'Search saved session names';
-search.setAttribute('aria-label', 'Search saved session names');
+search.placeholder = 'Search session names';
+search.setAttribute('aria-label', 'Search session names');
 search.maxLength = SESSION_NAME_LIMIT;
 archiveActions.append(search, backup.element, exportAll, importSessions);
 savedPanel.list.insertBefore(archiveActions, savedPanel.rows);
@@ -365,8 +365,8 @@ function nameSession(item: Summary, trigger: HTMLButtonElement, action: 'rename'
           panel.items = panel.items.map(value => value.id === item.id ? data.summary : value);
           panel.sessionRows.get(item.id)?.update(data.summary);
         }
-        if (action === 'keep') search.value = savedPanel.query = '';
         dialog.close();
+        if (action === 'keep') await searchHistory('').catch(showError);
         await refresh('overview');
         if (action === 'rename') toast.show('Session renamed');
       } catch (error) { feedback.replaceChildren(notice(errorMessage(error))); }
@@ -476,11 +476,14 @@ function row(item: Summary)
   function update(value: Summary): void
   {
     item = value;
-    // update only the name while keeping timestamps and row structure in place
+    // update labels while keeping timestamps and row structure in place
     const name = item.name ?? 'Unnamed session';
     if (title.textContent !== name) title.textContent = name;
+    const sessionNumber = `#${item.number}`;
+    if (number.textContent !== sessionNumber) number.textContent = sessionNumber;
+    rename.title = `Rename session ${sessionNumber}`;
+    rename.setAttribute('aria-label', rename.title);
   }
-  update(item);
   nameRow.append(title);
   label.append(nameRow, counts);
   summary.append(icon(icons.ChevronDown), number, label, date);
@@ -491,8 +494,7 @@ function row(item: Summary)
   const actions = el('div', 'backup-actions');
   const rename = button('', icons.Pencil, 'session-rename');
   rename.disabled = sessionDialogLock.active;
-  rename.title = `Rename session #${item.number}`;
-  rename.setAttribute('aria-label', rename.title);
+  update(item);
   rename.addEventListener('click', event => { event.preventDefault(); nameSession(item, rename, 'rename'); });
   nameRow.append(rename);
   const keep = button('', icons.Archive, 'button small');
@@ -611,6 +613,13 @@ async function loadHistory(panel: ReturnType<typeof historyPanel>, reset: boolea
   }
 }
 
+function searchHistory(query: string): Promise<void>
+{
+  search.value = savedPanel.query = query;
+  // invalidate pending results and reload independently of overview polling
+  return loadHistory(savedPanel, true);
+}
+
 function updateSave(): void
 {
   backup.update(backingUp, restoring);
@@ -641,7 +650,7 @@ const refresh = createRefreshQueue(async kind =>
   try {
     const data = await request({ kind });
     if (data.kind !== 'overview') throw new Error('Unexpected background response.');
-    if (kind === 'backup' && data.captureResult?.kind === 'saved') search.value = savedPanel.query = '';
+    if (kind === 'backup' && data.captureResult?.kind === 'saved') await searchHistory('');
     await updateFileAccess();
     applyOverview(data.overview);
     if (latestId !== data.overview.metadata.latestId || historyCount !== data.overview.metadata.count || historyRevision !== data.overview.metadata.historyRevision || panels.some(panel => !panel.rows.childElementCount)) {
@@ -664,8 +673,7 @@ for (const panel of panels) panel.more.addEventListener('click', () =>
   void loadHistory(panel, false).catch(showError);
 });
 search.addEventListener('input', () => {
-  savedPanel.query = search.value;
-  void loadHistory(savedPanel, true).catch(showError);
+  void searchHistory(search.value).catch(showError);
 });
 exportAll.addEventListener('click', () => { void downloadArchive().catch(showError); });
 const importFile = el('input');
@@ -683,7 +691,7 @@ importFile.addEventListener('change', () => {
     try {
       const archive = parseArchive(JSON.parse(await file.text()));
       await request({ kind: 'import', archive });
-      search.value = savedPanel.query = '';
+      await searchHistory('');
       await refresh('overview');
       toast.show(`${plural(archive.sessions.length, 'session')} imported`);
     } catch (error) { showError(error); }

@@ -71,7 +71,7 @@ export function createSettingsView(onSaved: () => void)
   const element = el('main', 'history-main');
   const heading = el('div', 'page-heading');
   const titles = el('div');
-  titles.append(el('h1', '', 'Settings'), el('p', 'muted', 'Control when backups are saved, how long they are kept, and how TabBlackBox looks.'));
+  titles.append(el('h1', '', 'Settings'), el('p', 'muted', 'Configure when automatic backups are saved, how long they are kept, and how things are displayed.'));
   heading.append(titles);
   const { element: appearance, body: appearanceBody } = settingsPanel('Appearance', icons.Palette);
   const themeRow = el('div', 'settings-row');

@@ -29,7 +29,7 @@ export type Metadata = {
   settings: StorageSettings;
   latestId: string | null; lastSavedAt: number | null; lastCheckedAt: number | null;
   bytes: number; count: number; operation: Operation | null;
-  lastSessionNumber: number; historyRevision: number;
+  lastSessionNumbers: Record<Source, number>; historyRevision: number;
 };
 export type StorageSettings = { retentionDays: number | null; maxBackups: number | null; maxStorageMB: number };
 export type StorageSettingsResult = { kind: 'saved' } | { kind: 'confirmation'; removeCount: number };

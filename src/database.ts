@@ -11,7 +11,15 @@ interface BackupDatabase extends DBSchema {
   metadata: { key: string; value: Metadata };
 }
 
-const initialMetadata = (): Metadata => ({ automatic: { ...DEFAULT_AUTOMATIC_SETTINGS }, settings: { ...DEFAULT_STORAGE_SETTINGS }, latestId: null, lastSavedAt: null, lastCheckedAt: null, bytes: 0, count: 0, operation: null, lastSessionNumber: 0, historyRevision: 0 });
+const initialMetadata = (): Metadata => ({ automatic: { ...DEFAULT_AUTOMATIC_SETTINGS }, settings: { ...DEFAULT_STORAGE_SETTINGS }, latestId: null, lastSavedAt: null, lastCheckedAt: null, bytes: 0, count: 0, operation: null, lastSessionNumbers: { automatic: 0, manual: 0 }, historyRevision: 0 });
+
+function nextSessionNumber(metadata: Metadata, source: Source): number
+{
+  const number = metadata.lastSessionNumbers[source] + 1;
+  if (!Number.isSafeInteger(number) || number < 1) throw new Error('Invalid session number.');
+  metadata.lastSessionNumbers[source] = number;
+  return number;
+}
 
 export class Repository {
   private connection: Promise<IDBPDatabase<BackupDatabase>> | null = null;
@@ -19,12 +27,36 @@ export class Repository {
 
   private db(): Promise<IDBPDatabase<BackupDatabase>>
   {
-    this.connection ??= openDB<BackupDatabase>(this.name, 1, {
-      upgrade(db)
+    this.connection ??= openDB<BackupDatabase>(this.name, 2, {
+      upgrade(db, oldVersion, _newVersion, transaction)
       {
-        db.createObjectStore('snapshots', { keyPath: 'id' });
-        db.createObjectStore('summaries', { keyPath: 'id' }).createIndex('capturedAt', 'capturedAt');
-        db.createObjectStore('metadata');
+        if (oldVersion === 0) {
+          db.createObjectStore('snapshots', { keyPath: 'id' });
+          db.createObjectStore('summaries', { keyPath: 'id' }).createIndex('capturedAt', 'capturedAt');
+          db.createObjectStore('metadata');
+        } else {
+          // split existing numbering by collection and update byte accounting atomically
+          void (async () => {
+            const metadata = (await transaction.objectStore('metadata').get('state')) ?? initialMetadata();
+            metadata.lastSessionNumbers = { automatic: 0, manual: 0 };
+            if ('lastSessionNumber' in metadata) delete metadata.lastSessionNumber;
+            const snapshots = await transaction.objectStore('snapshots').getAll();
+            snapshots.sort((a, b) => a.capturedAt - b.capturedAt || a.id.localeCompare(b.id));
+            metadata.bytes = 0;
+            for (const snapshot of snapshots) {
+              snapshot.number = nextSessionNumber(metadata, snapshot.savedAt === undefined ? 'automatic' : 'manual');
+              const summary = summarize(snapshot);
+              metadata.bytes += summary.bytes;
+              await transaction.objectStore('snapshots').put(snapshot);
+              await transaction.objectStore('summaries').put(summary);
+            }
+            metadata.count = snapshots.length;
+            metadata.historyRevision++;
+            await transaction.objectStore('metadata').put(metadata, 'state');
+          })().catch(() => {
+            try { transaction.abort(); } catch { /* failed requests may already have aborted the upgrade */ }
+          });
+        }
       },
       blocking: () => { void this.close(); },
       terminated: () => { this.connection = null; },
@@ -103,8 +135,7 @@ export class Repository {
       if (session.windows.length) {
         if (source === 'automatic' && latest && canonicalSession(latest) === canonicalSession(session)) result = { kind: 'unchanged' };
         else {
-          const number = metadata.lastSessionNumber + 1;
-          if (!Number.isSafeInteger(number) || number < 1) throw new Error('Invalid session number. Reset the prototype backup data before using this build.');
+          const number = nextSessionNumber(metadata, source);
           candidate = { ...session, id: crypto.randomUUID(), number, name: name ?? null, capturedAt: now, source, ...(source === 'manual' ? { savedAt: now } : {}) };
           result = { kind: 'saved', id: candidate.id };
         }
@@ -129,7 +160,7 @@ export class Repository {
         await tx.objectStore('snapshots').add(candidate);
         await tx.objectStore('summaries').add(summarize(candidate));
         // commit the number with the snapshot so failed or unchanged captures do not consume it
-        Object.assign(metadata, { latestId: candidate.id, lastSavedAt: now, lastSessionNumber: candidate.number });
+        Object.assign(metadata, { latestId: candidate.id, lastSavedAt: now });
       }
       metadata.settings = settings;
       Object.assign(metadata, { bytes: plan.bytes, count: plan.count });
@@ -164,7 +195,11 @@ export class Repository {
       const metadata = (await tx.objectStore('metadata').get('state')) ?? initialMetadata();
       const previous = summarize(snapshot);
       snapshot.name = name;
-      if (savedAt !== undefined) snapshot.savedAt ??= savedAt;
+      // assign a manual number only when the session first enters the saved collection
+      if (savedAt !== undefined && snapshot.savedAt === undefined) {
+        snapshot.number = nextSessionNumber(metadata, 'manual');
+        snapshot.savedAt = savedAt;
+      }
       const summary = summarize(snapshot);
       const bytes = metadata.bytes + summary.bytes - previous.bytes;
       if (snapshot.savedAt === undefined && bytes > metadata.bytes) {
@@ -188,7 +223,7 @@ export class Repository {
     }
   }
 
-  async deleteSaved(id: string): Promise<void>
+  async deleteSaved(id: string): Promise<boolean>
   {
     // delete only explicitly saved sessions and repair the capture pointer atomically
     const tx = (await this.db()).transaction(['snapshots', 'summaries', 'metadata'], 'readwrite');
@@ -197,13 +232,14 @@ export class Repository {
       if (!snapshot || snapshot.savedAt === undefined) throw new Error('This saved session is no longer available. Refresh history.');
       const metadata = (await tx.objectStore('metadata').get('state')) ?? initialMetadata();
       if (metadata.operation?.kind === 'running') throw new Error('Wait for restoration to finish before deleting saved sessions.');
+      const deletedLatest = metadata.latestId === id;
       const summary = await tx.objectStore('summaries').get(id);
       await tx.objectStore('snapshots').delete(id);
       await tx.objectStore('summaries').delete(id);
       metadata.bytes -= summary?.bytes ?? summarize(snapshot).bytes;
       metadata.count--;
       metadata.historyRevision++;
-      if (metadata.latestId === id) {
+      if (deletedLatest) {
         // imported capture dates must not become the automatic scheduling boundary
         let newest = await tx.objectStore('summaries').index('capturedAt').openCursor(null, 'prev');
         while (newest?.value.savedAt !== undefined) newest = await newest.continue();
@@ -212,6 +248,7 @@ export class Repository {
       }
       await tx.objectStore('metadata').put(metadata, 'state');
       await tx.done;
+      return deletedLatest;
     } catch (error) {
       try { tx.abort(); } catch { /* transaction may already be aborted */ }
       await tx.done.catch(() => undefined);
@@ -237,15 +274,13 @@ export class Repository {
     try {
       const metadata = (await tx.objectStore('metadata').get('state')) ?? initialMetadata();
       for (const session of archive.sessions) {
-        const number = metadata.lastSessionNumber + 1;
-        if (!Number.isSafeInteger(number) || number < 1) throw new Error('Invalid session number.');
+        const number = nextSessionNumber(metadata, 'manual');
         const snapshot: Snapshot = { ...session, id: crypto.randomUUID(), number, savedAt: now };
         const summary = summarize(snapshot);
         metadata.bytes += summary.bytes;
         await tx.objectStore('snapshots').add(snapshot);
         await tx.objectStore('summaries').add(summary);
         metadata.count++;
-        metadata.lastSessionNumber = number;
       }
       metadata.historyRevision++;
       await tx.objectStore('metadata').put(metadata, 'state');
