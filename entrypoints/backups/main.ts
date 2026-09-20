@@ -36,8 +36,6 @@ const feedback = el('div');
 feedback.setAttribute('aria-live', 'polite');
 const toast = createToast();
 
-const operationRegion = el('div');
-operationRegion.setAttribute('aria-live', 'polite');
 const list = el('div', 'backup-list');
 const listHeader = el('div', 'list-header');
 const listLabel = el('strong', '', 'Saved sessions');
@@ -49,7 +47,7 @@ more.hidden = true;
 list.append(listHeader, rows);
 const footer = el('footer', 'history-footer');
 footer.append(icon(icons.HardDrive), el('span', '', 'Backups are stored on this device. Your storage settings determine how long they are kept.'));
-main.append(heading, status, feedback, operationRegion, list, more, footer);
+main.append(heading, status, feedback, list, more, footer);
 const settings = createSettingsView(() => { void refresh('backup'); }, () => toast.show('Settings have been saved'));
 root.append(header, nav, main, settings.element, toast.element);
 
@@ -75,7 +73,7 @@ let historyCount: number | null = null;
 let historyRevision: number | null = null;
 let restoring = false;
 let backingUp = false;
-let operationKey = '';
+let lastOperation: Operation | null | undefined;
 let fileAccess = false;
 const restoreButtons = new Map<HTMLButtonElement, number>();
 const sessionRows = new Map<string, ReturnType<typeof row>>();
@@ -103,25 +101,18 @@ function fileAccessNotice(): HTMLElement
 
 function renderOperation(operation: Operation | null): void
 {
-  const key = JSON.stringify(operation);
-  if (operationKey === key) return;
-  operationKey = key;
-  operationRegion.replaceChildren();
-  if (!operation) return;
-  const section = el('section', `notice ${operation.kind === 'interrupted' || operation.errors.length ? 'warning-notice' : ''}`);
-  section.setAttribute('aria-label', 'Restoration result');
-  section.append(el('strong', '', operation.kind === 'running' ? 'Restoration in progress' : operation.kind === 'interrupted' ? 'Restoration was interrupted' : 'Restoration finished'));
-  section.append(el('p', '', `${operation.opened} opened · ${operation.skipped} skipped · ${operation.failed} failed · ${operation.groupErrors} group errors`));
-  if (operation.kind === 'interrupted') section.append(el('p', '', 'Progress may be incomplete. Tabs already opened remain available. Starting again can create duplicates.'));
-  if (operation.errors.length) {
-    const details = el('details');
-    details.append(el('summary', '', 'View issues'));
-    const errors = el('ul');
-    for (const text of operation.errors) errors.append(el('li', '', text));
-    details.append(errors);
-    section.append(details);
-  }
-  operationRegion.append(section);
+  const previous = lastOperation;
+  lastOperation = operation;
+  // ignore stored results on page load and notify once even if a fast restore finishes between polls
+  if (previous === undefined || !operation || operation.kind === 'running') return;
+  if (previous && previous.snapshotId === operation.snapshotId && previous.startedAt === operation.startedAt && previous.kind !== 'running') return;
+  const issues = operation.failed > 0 || operation.groupErrors > 0 || operation.errors.length > 0;
+  const title = operation.kind === 'interrupted' ? 'Restoration interrupted' : issues ? 'Restoration finished with issues' : 'Restoration finished';
+  const parts = [title, `${plural(operation.opened, 'tab')} opened`];
+  if (operation.skipped) parts.push(`${operation.skipped} skipped`);
+  if (operation.failed) parts.push(`${operation.failed} failed`);
+  if (operation.groupErrors) parts.push(plural(operation.groupErrors, 'group error'));
+  toast.show(parts.join(' · '), operation.kind === 'interrupted' || issues ? icons.CircleAlert : icons.Check);
 }
 
 async function confirmRestore(load: () => Snapshot | Promise<Snapshot>, trigger: HTMLButtonElement, windowIndex?: number): Promise<void>

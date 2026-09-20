@@ -47,7 +47,8 @@ p { margin-top: 6px; }
 .list-header { padding: 9.5px 16px; background: var(--bgColor-muted); display: flex; align-items: center; gap: 8px; }
 .backup-row { position: relative; border-top: 1px solid var(--borderColor-muted); }
 .backup-actions { position: absolute; right: 16px; top: 17px; display: flex; gap: 8px; }
-.backup-summary { display: grid; grid-template-columns: 16px max-content minmax(0, 1fr) minmax(0, 1.25fr) auto; align-items: center; gap: 12px; padding: 10px 116px 10px 16px; cursor: pointer; list-style: none; min-height: 62px; }
+.backup-summary { display: grid; grid-template-columns: 16px max-content minmax(0, 1fr) minmax(0, 1.25fr) 80px; align-items: center; gap: 12px; padding: 10px 116px 10px 16px; cursor: pointer; list-style: none; min-height: 62px; }
+.backup-summary > .badge { justify-self: end; }
 .backup-summary::-webkit-details-marker { display: none; }
 .backup-summary:hover { background: var(--bgColor-muted); }
 .backup-summary > svg { color: var(--fgColor-muted); transform: rotate(-90deg); }

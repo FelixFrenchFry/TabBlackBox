@@ -24,7 +24,7 @@ export function createToast()
       content.classList.toggle('is-success', glyph === icons.Check);
       content.append(icon(glyph), el('span', '', message));
       element.append(content);
-      timer = setTimeout(clear, 4000);
+      timer = setTimeout(clear, 5000);
     },
   };
 }
