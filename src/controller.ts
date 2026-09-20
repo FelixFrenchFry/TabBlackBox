@@ -121,7 +121,7 @@ export class Controller {
     await this.capture('automatic');
   }
 
-  async capture(source: Source): Promise<CaptureResult | undefined>
+  async capture(source: Source, name?: string | null): Promise<CaptureResult | undefined>
   {
     await this.start(source === 'manual');
     if (this.restoration.kind !== 'idle') {
@@ -132,7 +132,7 @@ export class Controller {
     if (source === 'automatic' && Date.now() < this.retryAfter) return;
     this.stopTimers();
     // fix capture admission before asynchronous work begins
-    return this.enqueue(() => this.performCapture(source));
+    return this.enqueue(() => this.performCapture(source, name));
   }
 
   private captureFailed(error: unknown, phase: 'scan' | 'write'): void
@@ -146,7 +146,7 @@ export class Controller {
     }
   }
 
-  private async performCapture(source: Source): Promise<CaptureResult | undefined>
+  private async performCapture(source: Source, name?: string | null): Promise<CaptureResult | undefined>
   {
     if (source === 'automatic') {
       try { if (!await this.automaticReady()) return; }
@@ -171,7 +171,7 @@ export class Controller {
       }
     }
     try {
-      const result = await this.repository.capture(session, source, Date.now());
+      const result = await this.repository.capture(session, source, Date.now(), name);
       if (source === 'manual' && this.automatic.enabled && this.automatic.pausedUntil !== null && this.automatic.pausedUntil > Date.now()) this.scheduleCapture(this.automatic.pausedUntil - Date.now());
       this.retryAfter = 0;
       this.status = generation === this.generation
@@ -225,7 +225,8 @@ export class Controller {
     catch { /* saved backups remain readable when recovery needs a write */ }
     const metadata = await this.repository.metadata();
     const newest = metadata.latestId ? await this.repository.get(metadata.latestId) : null;
-    return { status: this.status, metadata, latest: newest ? summarize(newest) : null };
+    const { bytes, count } = await this.repository.history(null, 0, 'automatic');
+    return { status: this.status, metadata, latest: newest ? summarize(newest) : null, automaticStorage: { bytes, count } };
   }
 
   async setStorageSettings(settings: StorageSettings, confirmedRemovalCount: number): Promise<StorageSettingsResult>
@@ -250,7 +251,7 @@ export class Controller {
       catch (error) {
         // rejecting proposed limits leaves the active backup policy and status intact
         if (error instanceof StorageLimitExceededError) {
-          throw new Error('The proposed storage limit cannot fit the newest backup. Increase the storage limit. Your settings have not changed.');
+          throw new Error('The proposed space limit cannot fit the newest automatic backup. Increase the space limit. Your settings have not changed.');
         }
         this.captureFailed(error, 'write');
         throw error;

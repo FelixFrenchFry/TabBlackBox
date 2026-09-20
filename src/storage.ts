@@ -1,7 +1,7 @@
 import type { StorageSettings, Summary } from './model';
 
 export class StorageLimitExceededError extends Error {
-  constructor() { super('Backup failed: storage full. The newest backup alone exceeds the storage limit.'); }
+  constructor() { super('Backup failed: storage full. The newest automatic backup exceeds the space limit. Increase the space limit.'); }
 }
 
 export const MB = 1_000_000;
@@ -19,8 +19,9 @@ export function parseStorageSettings(value: unknown): StorageSettings
 
 export function retentionPlan(records: Summary[], latestId: string | null, settings: StorageSettings, now: number, budget = settings.maxStorageMB * MB)
 {
-  // protect the latest successful backup or the candidate being saved
-  const newest = [...records].sort((a, b) => Number(b.id === latestId) - Number(a.id === latestId) || b.capturedAt - a.capturedAt || b.id.localeCompare(a.id));
+  // saved sessions never participate in automatic cleanup
+  const saved = records.filter(item => item.savedAt !== undefined);
+  const newest = records.filter(item => item.savedAt === undefined).sort((a, b) => Number(b.id === latestId) - Number(a.id === latestId) || b.capturedAt - a.capturedAt || b.id.localeCompare(a.id));
   const cutoff = settings.retentionDays === null ? -Infinity : now - settings.retentionDays * 86_400_000;
   const kept = newest.filter((item, index) => (settings.maxBackups === null || index < settings.maxBackups) && (index === 0 || item.capturedAt >= cutoff));
   let bytes = kept.reduce((sum, item) => sum + item.bytes, 0);
@@ -29,6 +30,6 @@ export function retentionPlan(records: Summary[], latestId: string | null, setti
     if (oldest) bytes -= oldest.bytes;
   }
   if (bytes > budget) throw new StorageLimitExceededError();
-  const keepIds = new Set(kept.map(item => item.id));
-  return { removeIds: records.filter(item => !keepIds.has(item.id)).map(item => item.id), bytes, count: kept.length };
+  const keepIds = new Set([...saved, ...kept].map(item => item.id));
+  return { removeIds: records.filter(item => !keepIds.has(item.id)).map(item => item.id), bytes: bytes + saved.reduce((sum, item) => sum + item.bytes, 0), count: keepIds.size };
 }

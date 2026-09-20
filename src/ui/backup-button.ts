@@ -1,4 +1,4 @@
-import type { CaptureResult, Overview } from '../model';
+import type { CaptureResult } from '../model';
 import { el, icon, icons } from './shared';
 
 export function createBackupButton(onClick: () => void)
@@ -47,9 +47,9 @@ export function createBackupButton(onClick: () => void)
       restoring = nextRestoring;
       render();
     },
-    finish(overview: Overview, result?: CaptureResult): void
+    finish(result?: CaptureResult): void
     {
-      if (overview.status.kind !== 'current' || (result?.kind !== 'saved' && result?.kind !== 'unchanged')) return;
+      if (result?.kind !== 'saved') return;
       saved = true;
       render();
     },

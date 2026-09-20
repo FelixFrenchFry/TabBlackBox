@@ -1,6 +1,7 @@
 import { applyAutomaticUpdate, DEFAULT_AUTOMATIC_SETTINGS } from './automatic';
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
-import type { AutomaticUpdate, CaptureResult, HistoryCursor, Metadata, Operation, Session, Snapshot, Source, StorageSettings, StorageSettingsResult, Summary } from './model';
+import type { AutomaticUpdate, CaptureResult, Collection, HistoryCursor, Metadata, Operation, Session, Snapshot, Source, StorageSettings, StorageSettingsResult, Summary } from './model';
+import type { Archive } from './archive';
 import { canonicalSession, summarize } from './session';
 import { DEFAULT_STORAGE_SETTINGS, MB, retentionPlan } from './storage';
 
@@ -52,23 +53,32 @@ export class Repository {
 
   async list(before: HistoryCursor | null = null, limit = 50): Promise<Summary[]>
   {
-    const db = await this.db();
-    const transaction = db.transaction('summaries');
-    const range = before ? IDBKeyRange.upperBound(before.capturedAt) : null;
-    let cursor = await transaction.store.index('capturedAt').openCursor(range, 'prev');
-    const result: Summary[] = [];
-    while (cursor && result.length < limit) {
-      // use the primary key to break timestamp ties after the anchor is pruned
-      if (!before || cursor.key < before.capturedAt || cursor.primaryKey < before.id) result.push(cursor.value);
-      cursor = await cursor.continue();
-    }
-    await transaction.done;
-    return result;
+    return (await this.history(before, limit)).items;
   }
 
-  async capture(session: Session, source: Source, now: number): Promise<CaptureResult>
+  async history(before: HistoryCursor | null = null, limit = 50, collection?: Collection, query = ''): Promise<{ items: Summary[]; count: number; bytes: number }>
   {
-    return this.writeCapture(session, source, now);
+    const db = await this.db();
+    const transaction = db.transaction('summaries');
+    const summaries = await transaction.store.index('capturedAt').getAll();
+    const result: Summary[] = [];
+    let count = 0;
+    let bytes = 0;
+    const search = query.trim().toLocaleLowerCase();
+    for (const item of summaries.reverse()) {
+      const matches = collection === undefined || (item.savedAt !== undefined) === (collection === 'saved');
+      if (matches) { count++; bytes += item.bytes; }
+      // use the primary key to break timestamp ties after the anchor is pruned
+      if (matches && result.length < limit && (item.name ?? 'Unnamed session').toLocaleLowerCase().includes(search) &&
+          (!before || item.capturedAt < before.capturedAt || (item.capturedAt === before.capturedAt && item.id < before.id))) result.push(item);
+    }
+    await transaction.done;
+    return { items: result, count, bytes };
+  }
+
+  async capture(session: Session, source: Source, now: number, name?: string | null): Promise<CaptureResult>
+  {
+    return this.writeCapture(session, source, now, undefined, name);
   }
 
   async setStorageSettings(settings: StorageSettings, confirmedRemovalCount: number, session: Session, now: number): Promise<StorageSettingsResult>
@@ -77,9 +87,9 @@ export class Repository {
     return result.kind === 'confirmation' ? result : { kind: 'saved' };
   }
 
-  private writeCapture(session: Session, source: Source, now: number): Promise<CaptureResult>;
+  private writeCapture(session: Session, source: Source, now: number, change: undefined, name?: string | null): Promise<CaptureResult>;
   private writeCapture(session: Session, source: Source, now: number, change: { settings: StorageSettings; confirmedRemovalCount: number }): Promise<CaptureResult | StorageSettingsResult>;
-  private async writeCapture(session: Session, source: Source, now: number, change?: { settings: StorageSettings; confirmedRemovalCount: number }): Promise<CaptureResult | StorageSettingsResult>
+  private async writeCapture(session: Session, source: Source, now: number, change?: { settings: StorageSettings; confirmedRemovalCount: number }, name?: string | null): Promise<CaptureResult | StorageSettingsResult>
   {
     const db = await this.db();
     // plan the candidate and commit snapshots, retention, and settings in one transaction
@@ -91,11 +101,11 @@ export class Repository {
       let result: CaptureResult = { kind: 'empty' };
       let candidate: Snapshot | undefined;
       if (session.windows.length) {
-        if (latest && canonicalSession(latest) === canonicalSession(session)) result = { kind: 'unchanged' };
+        if (source === 'automatic' && latest && canonicalSession(latest) === canonicalSession(session)) result = { kind: 'unchanged' };
         else {
           const number = metadata.lastSessionNumber + 1;
           if (!Number.isSafeInteger(number) || number < 1) throw new Error('Invalid session number. Reset the prototype backup data before using this build.');
-          candidate = { ...session, id: crypto.randomUUID(), number, name: null, capturedAt: now, source };
+          candidate = { ...session, id: crypto.randomUUID(), number, name: name ?? null, capturedAt: now, source, ...(source === 'manual' ? { savedAt: now } : {}) };
           result = { kind: 'saved', id: candidate.id };
         }
       }
@@ -103,7 +113,10 @@ export class Repository {
       const history = await tx.objectStore('summaries').getAll();
       if (candidate) history.push(summarize(candidate));
       const settings = change?.settings ?? metadata.settings;
-      const plan = retentionPlan(history, candidate?.id ?? metadata.latestId, settings, now, this.budget);
+      // manual saves do not consume the automatic budget or prune its history
+      const plan = source === 'manual'
+        ? { removeIds: [], bytes: history.reduce((sum, item) => sum + item.bytes, 0), count: history.length }
+        : retentionPlan(history, candidate?.id ?? metadata.latestId, settings, now, this.budget);
       if (change && plan.removeIds.length > change.confirmedRemovalCount) {
         await tx.done;
         return { kind: 'confirmation', removeCount: plan.removeIds.length };
@@ -133,6 +146,16 @@ export class Repository {
 
   async rename(id: string, name: string | null): Promise<Summary>
   {
+    return this.updateSession(id, name);
+  }
+
+  async keep(id: string, name: string | null, now: number): Promise<Summary>
+  {
+    return this.updateSession(id, name, now);
+  }
+
+  private async updateSession(id: string, name: string | null, savedAt?: number): Promise<Summary>
+  {
     // update labels and byte accounting together without capturing or applying retention
     const tx = (await this.db()).transaction(['snapshots', 'summaries', 'metadata'], 'readwrite');
     try {
@@ -141,10 +164,15 @@ export class Repository {
       const metadata = (await tx.objectStore('metadata').get('state')) ?? initialMetadata();
       const previous = summarize(snapshot);
       snapshot.name = name;
+      if (savedAt !== undefined) snapshot.savedAt ??= savedAt;
       const summary = summarize(snapshot);
       const bytes = metadata.bytes + summary.bytes - previous.bytes;
-      if (bytes > (this.budget ?? metadata.settings.maxStorageMB * MB) && bytes > metadata.bytes) throw new Error('There is not enough backup storage for this name. Shorten it or increase the storage limit.');
-      if (previous.name !== name) {
+      if (snapshot.savedAt === undefined && bytes > metadata.bytes) {
+        const history = await tx.objectStore('summaries').getAll();
+        const automaticBytes = history.filter(item => item.savedAt === undefined).reduce((sum, item) => sum + item.bytes, 0) + summary.bytes - previous.bytes;
+        if (automaticBytes > (this.budget ?? metadata.settings.maxStorageMB * MB)) throw new Error('There is not enough backup storage for this session. Shorten the name or increase the storage limit.');
+      }
+      if (previous.name !== name || previous.savedAt !== snapshot.savedAt) {
         await tx.objectStore('snapshots').put(snapshot);
         await tx.objectStore('summaries').put(summary);
         metadata.bytes = bytes;
@@ -153,6 +181,75 @@ export class Repository {
       }
       await tx.done;
       return summary;
+    } catch (error) {
+      try { tx.abort(); } catch { /* transaction may already be aborted */ }
+      await tx.done.catch(() => undefined);
+      throw error;
+    }
+  }
+
+  async deleteSaved(id: string): Promise<void>
+  {
+    // delete only explicitly saved sessions and repair the capture pointer atomically
+    const tx = (await this.db()).transaction(['snapshots', 'summaries', 'metadata'], 'readwrite');
+    try {
+      const snapshot = await tx.objectStore('snapshots').get(id);
+      if (!snapshot || snapshot.savedAt === undefined) throw new Error('This saved session is no longer available. Refresh history.');
+      const metadata = (await tx.objectStore('metadata').get('state')) ?? initialMetadata();
+      if (metadata.operation?.kind === 'running') throw new Error('Wait for restoration to finish before deleting saved sessions.');
+      const summary = await tx.objectStore('summaries').get(id);
+      await tx.objectStore('snapshots').delete(id);
+      await tx.objectStore('summaries').delete(id);
+      metadata.bytes -= summary?.bytes ?? summarize(snapshot).bytes;
+      metadata.count--;
+      metadata.historyRevision++;
+      if (metadata.latestId === id) {
+        // imported capture dates must not become the automatic scheduling boundary
+        let newest = await tx.objectStore('summaries').index('capturedAt').openCursor(null, 'prev');
+        while (newest?.value.savedAt !== undefined) newest = await newest.continue();
+        metadata.latestId = newest?.value.id ?? null;
+        metadata.lastSavedAt = newest?.value.capturedAt ?? null;
+      }
+      await tx.objectStore('metadata').put(metadata, 'state');
+      await tx.done;
+    } catch (error) {
+      try { tx.abort(); } catch { /* transaction may already be aborted */ }
+      await tx.done.catch(() => undefined);
+      throw error;
+    }
+  }
+
+  async exportSaved(id?: string): Promise<Archive>
+  {
+    const tx = (await this.db()).transaction('snapshots');
+    const snapshots = id === undefined ? await tx.store.getAll() : [await tx.store.get(id)];
+    const sessions = snapshots.filter((snapshot): snapshot is Snapshot => snapshot !== undefined && snapshot.savedAt !== undefined)
+      .map(({ windows, name, capturedAt, source }) => ({ windows, name, capturedAt, source }));
+    await tx.done;
+    if (!sessions.length) throw new Error('No saved sessions are available to export.');
+    return { format: 'tabblackbox', version: 1, sessions };
+  }
+
+  async importSaved(archive: Archive, now: number): Promise<void>
+  {
+    // import the entire archive without pruning recovery history or replacing its latest pointer
+    const tx = (await this.db()).transaction(['snapshots', 'summaries', 'metadata'], 'readwrite');
+    try {
+      const metadata = (await tx.objectStore('metadata').get('state')) ?? initialMetadata();
+      for (const session of archive.sessions) {
+        const number = metadata.lastSessionNumber + 1;
+        if (!Number.isSafeInteger(number) || number < 1) throw new Error('Invalid session number.');
+        const snapshot: Snapshot = { ...session, id: crypto.randomUUID(), number, savedAt: now };
+        const summary = summarize(snapshot);
+        metadata.bytes += summary.bytes;
+        await tx.objectStore('snapshots').add(snapshot);
+        await tx.objectStore('summaries').add(summary);
+        metadata.count++;
+        metadata.lastSessionNumber = number;
+      }
+      metadata.historyRevision++;
+      await tx.objectStore('metadata').put(metadata, 'state');
+      await tx.done;
     } catch (error) {
       try { tx.abort(); } catch { /* transaction may already be aborted */ }
       await tx.done.catch(() => undefined);

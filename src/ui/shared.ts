@@ -1,11 +1,11 @@
-import { createElement, Archive, ArrowUpRight, Check, ChevronDown, CircleAlert, Clock3, FileText, Globe, HardDrive, History, LoaderCircle, LockKeyhole, Monitor, Palette, Pencil, Pin, RotateCcw, Save, Settings, ShieldCheck, type IconNode } from 'lucide';
+import { createElement, Archive, ArrowUpRight, Check, ChevronDown, CircleAlert, CircleQuestionMark, Clock3, Download, FileText, Globe, HardDrive, History, LoaderCircle, LockKeyhole, Monitor, Palette, Pencil, Pin, RotateCcw, Save, Settings, ShieldCheck, Trash2, Upload, type IconNode } from 'lucide';
 import type { Data, Reply, Request } from '../protocol';
 import type { Overview } from '../model';
 import { initializeAppearance } from './appearance';
 import { initializeDates, setTimestamp, timestamp } from './dates';
 import './style.css';
 
-export const icons = { Archive, ArrowUpRight, Check, ChevronDown, CircleAlert, Clock3, FileText, Globe, HardDrive, History, LoaderCircle, LockKeyhole, Monitor, Palette, Pencil, Pin, RotateCcw, Save, Settings, ShieldCheck };
+export const icons = { Archive, ArrowUpRight, Check, ChevronDown, CircleAlert, CircleQuestionMark, Clock3, Download, FileText, Globe, HardDrive, History, LoaderCircle, LockKeyhole, Monitor, Palette, Pencil, Pin, RotateCcw, Save, Settings, ShieldCheck, Trash2, Upload };
 
 export function icon(node: IconNode, size = 16): SVGElement
 {
@@ -105,7 +105,8 @@ export function createStatusView(action?: HTMLButtonElement)
         : null;
       const due = metadata.lastSavedAt === null ? null : metadata.lastSavedAt + automatic.intervalMinutes * 60_000;
       const waiting = suspended === null && status.kind === 'pending' && due !== null && due > Date.now();
-      const label = waiting ? 'Changes waiting for the next backup' : suspended === 'disabled' ? 'Automatic backups are off' : suspended === 'paused' ? 'Automatic backups are paused' : status.kind === 'error' ? 'Backup needs attention' : status.kind === 'pending' ? 'Changes waiting to be saved' : status.kind === 'restoring' ? 'Restoring session' : status.kind === 'empty' ? 'No eligible tabs open' : status.kind === 'current' ? 'Your tabs are backed up' : 'Checking your tabs';
+      const currentLabel = latest?.source === 'automatic' ? 'Current tabs backed up automatically' : latest?.source === 'manual' ? 'Current tabs backed up manually' : 'Current session is backed up';
+      const label = waiting ? 'Changes waiting for the next backup' : suspended === 'disabled' ? 'Automatic backups are off' : suspended === 'paused' ? 'Automatic backups are paused' : status.kind === 'error' ? 'Backup needs attention' : status.kind === 'pending' ? 'Changes waiting to be saved' : status.kind === 'restoring' ? 'Restoring session' : status.kind === 'empty' ? 'No eligible tabs open' : status.kind === 'current' ? currentLabel : 'Checking your tabs';
       const detail = suspended === 'disabled' ? 'Use Back up now to save your tabs manually.' : suspended === 'paused' ? 'Automatic backups will resume when the pause ends. Manual backups remain available.' : status.kind === 'error' ? status.message : status.kind === 'current' && latest ? `${latest.windowCount} windows · ${latest.tabCount} tabs in the latest backup` : status.kind === 'restoring' ? 'Opening your saved tabs in new windows.' : status.kind === 'empty' ? 'Your previous backups are still available.' : 'Automatic backups run when your tabs change.';
       const className = 'status-card status-' + (suspended ?? status.kind);
       if (element.className !== className) element.className = className;

@@ -41,10 +41,7 @@ const refresh = createRefreshQueue(async kind =>
     statusCard.update(data.overview);
     restoring = data.overview.status.kind === 'restoring';
     updateSave();
-    if (kind === 'backup') backup.finish(data.overview, data.captureResult);
-    if (kind === 'backup' && data.overview.status.kind === 'pending') {
-      feedback.replaceChildren(el('p', 'muted', 'Tabs changed during capture. Automatic backup will retry.'));
-    }
+    if (kind === 'backup') backup.finish(data.captureResult);
   } catch (error) { feedback.replaceChildren(notice(errorMessage(error))); }
 }, value => { backingUp = value; updateSave(); });
 history.addEventListener('click', () => { void chrome.tabs.create({ url: chrome.runtime.getURL('/backups.html') }); });

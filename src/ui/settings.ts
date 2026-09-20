@@ -1,4 +1,3 @@
-import { createBackupButton } from './backup-button';
 import { automaticSettings } from './automatic-settings';
 import { readDateFormat, setDateFormat } from './dates';
 import { errorMessage, type Overview, type StorageSettings } from '../model';
@@ -22,12 +21,14 @@ function storageSetting(name: string, description: string, id: string, unit: str
   const text = el('div', 'setting-description');
   const label = el('label', 'setting-name', name);
   label.htmlFor = id;
+  const heading = el('div', 'setting-label');
+  heading.append(label, el('span', 'badge', 'for automatic backups'));
   const explanation = el('p', 'muted', description);
   explanation.id = `${id}-description`;
   const validation = el('p', 'setting-validation');
   validation.id = `${id}-validation`;
   validation.hidden = true;
-  text.append(label, explanation, validation);
+  text.append(heading, explanation, validation);
   const control = el('div', 'settings-number-control');
   const input = el('input', 'settings-number');
   input.type = 'number';
@@ -50,7 +51,7 @@ function confirmCleanup(count: number): Promise<boolean>
     const title = el('h2', '', 'Delete older backups?');
     title.id = 'storage-confirm-title';
     dialog.setAttribute('aria-labelledby', title.id);
-    dialog.append(title, el('p', '', `Applying these limits will delete ${plural(count, 'older backup')}. This cannot be undone. Your newest backup will be kept.`));
+    dialog.append(title, el('p', '', `Applying these limits will delete ${plural(count, 'older backup')}. This cannot be undone. Your saved sessions and newest recovery backup will be kept.`));
     const actions = el('div', 'dialog-actions');
     const cancel = button('Cancel', icons.Check);
     const confirm = button('Apply limits', icons.HardDrive, 'button primary');
@@ -65,7 +66,7 @@ function confirmCleanup(count: number): Promise<boolean>
   });
 }
 
-export function createSettingsView(backUpNow: () => void, onSaved: () => void)
+export function createSettingsView(onSaved: () => void)
 {
   const element = el('main', 'history-main');
   const heading = el('div', 'page-heading');
@@ -132,7 +133,7 @@ export function createSettingsView(backUpNow: () => void, onSaved: () => void)
   dateRow.append(dateText, dateControl);
   appearanceBody.append(themeRow, dateRow, appearanceFeedback);
 
-  const { element: storage, body: storageBody } = settingsPanel('Storage', icons.HardDrive);
+  const { element: storage, body: storageBody } = settingsPanel('Storage limits', icons.HardDrive);
   const usage = el('p', 'settings-storage muted', 'Checking storage…');
   const usageRow = el('div', 'storage-usage');
   const percentage = el('span', 'storage-percentage muted', '—');
@@ -140,9 +141,9 @@ export function createSettingsView(backUpNow: () => void, onSaved: () => void)
   const meter = el('progress', 'storage-meter');
   meter.max = DEFAULT_STORAGE_SETTINGS.maxStorageMB * MB;
   meter.setAttribute('aria-label', 'Backup storage used');
-  const age = storageSetting('Time limit', 'Time limit before a saved backup expires. Expired backups are deleted. This can be turned on/off.', 'retention-days', 'days', 3650);
-  const count = storageSetting('Backup limit', 'Maximum number of saved backups. The oldest backup is deleted whenever this limit is exceeded. This can be turned on/off.', 'maximum-backups', 'backups', 100_000);
-  const capacity = storageSetting('Storage limit', 'Maximum space available for backup data. The oldest backups are deleted whenever space is needed. This is always enforced.', 'maximum-storage', 'MB', 100_000);
+  const age = storageSetting('Time limit', 'Time limit before an automatically saved backup expires. Expired automatic backups are deleted. Manual backups are excluded from this.', 'retention-days', 'days', 3650);
+  const count = storageSetting('Count limit', 'Maximum number of automatically saved backups. The oldest automatic backup is deleted when this limit is exceeded. Manual backups are excluded from this.', 'maximum-backups', 'backups', 100_000);
+  const capacity = storageSetting('Space limit', 'Maximum disk space available for automatic backups. The oldest automatic backups are deleted when space is needed. Manual backups are excluded from this.', 'maximum-storage', 'MB', 100_000);
   function optionalLimit(setting: typeof age) {
     const toggle = el('input');
     toggle.type = 'checkbox';
@@ -297,9 +298,7 @@ export function createSettingsView(backUpNow: () => void, onSaved: () => void)
   storageBody.append(usageRow, meter, form);
 
   const { element: automatic, body: automaticBody } = settingsPanel('Automatic backups', icons.Clock3);
-  const backUp = createBackupButton(backUpNow);
-  backUp.element.disabled = true;
-  const backupStatus = createStatusView(backUp.element);
+  const backupStatus = createStatusView();
   const automaticControls = automaticSettings(overview => view.update(overview), onSaved);
   automaticBody.append(automaticControls.element, backupStatus.element);
   const feedback = el('div');
@@ -311,14 +310,14 @@ export function createSettingsView(backUpNow: () => void, onSaved: () => void)
     {
       feedback.replaceChildren();
       const settings = overview.metadata.settings;
-      const mb = overview.metadata.bytes / MB;
+      const mb = overview.automaticStorage.bytes / MB;
       const used = mb > 0 && mb < 0.01 ? '<0.01' : mb.toLocaleString(undefined, { maximumFractionDigits: 2 });
       const percent = mb / settings.maxStorageMB * 100;
       const percentText = percent > 0 && percent < 0.1 ? '<0.1' : percent.toLocaleString(undefined, { maximumFractionDigits: 1 });
-      usage.textContent = `${plural(overview.metadata.count, 'saved backup')} · ${used} MB of ${settings.maxStorageMB.toLocaleString()} MB used`;
+      usage.textContent = `${plural(overview.automaticStorage.count, 'automatic backup')} · ${used} MB of ${settings.maxStorageMB.toLocaleString()} MB used`;
       percentage.textContent = `${percentText}%`;
       meter.max = settings.maxStorageMB * MB;
-      meter.value = overview.metadata.bytes;
+      meter.value = overview.automaticStorage.bytes;
       meter.setAttribute('aria-valuetext', `${used} MB used, ${percentText}% of storage limit`);
       if (!dirty && !saving) restoreDraft(settings);
       if (!saving) {
@@ -328,8 +327,6 @@ export function createSettingsView(backUpNow: () => void, onSaved: () => void)
       automaticControls.update(overview);
       backupStatus.update(overview);
     },
-    setBackupState: backUp.update,
-    finishBackup: backUp.finish,
     showError(message: string): void { feedback.replaceChildren(notice(message)); },
   };
   return view;

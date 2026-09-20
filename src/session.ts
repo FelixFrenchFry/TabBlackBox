@@ -71,6 +71,7 @@ export function summarize(snapshot: Snapshot): Summary
   const tabs = snapshot.windows.flatMap(window => window.tabs);
   return {
     id: snapshot.id, number: snapshot.number, name: snapshot.name, capturedAt: snapshot.capturedAt, source: snapshot.source,
+    ...(snapshot.savedAt === undefined ? {} : { savedAt: snapshot.savedAt }),
     windowCount: snapshot.windows.length, tabCount: tabs.length,
     supportedCount: tabs.filter(tab => restorableUrl(tab.url, true)).length,
     bytes: new TextEncoder().encode(JSON.stringify(snapshot)).byteLength,

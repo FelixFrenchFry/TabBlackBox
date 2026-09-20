@@ -4,8 +4,9 @@ export type SavedGroup = { name: string; color: GroupColor; collapsed: boolean }
 export type SavedWindow = { tabs: SavedTab[]; groups: SavedGroup[] };
 export type Session = { windows: SavedWindow[] };
 export type Source = 'automatic' | 'manual';
-export type Snapshot = Session & { id: string; number: number; name: string | null; capturedAt: number; source: Source };
-export type Summary = Pick<Snapshot, 'id' | 'number' | 'name' | 'capturedAt' | 'source'> & {
+export type Snapshot = Session & { id: string; number: number; name: string | null; capturedAt: number; source: Source; savedAt?: number };
+export type Collection = 'saved' | 'automatic';
+export type Summary = Pick<Snapshot, 'id' | 'number' | 'name' | 'capturedAt' | 'source' | 'savedAt'> & {
   windowCount: number; tabCount: number; supportedCount: number; bytes: number;
 };
 export type HistoryCursor = Pick<Summary, 'capturedAt' | 'id'>;
@@ -34,7 +35,7 @@ export type StorageSettings = { retentionDays: number | null; maxBackups: number
 export type StorageSettingsResult = { kind: 'saved' } | { kind: 'confirmation'; removeCount: number };
 export type CaptureResult = { kind: 'saved'; id: string } | { kind: 'unchanged' | 'empty' };
 export type Status = { kind: 'initializing' | 'pending' | 'current' | 'empty' | 'restoring' | 'disabled' | 'paused' } | { kind: 'error'; message: string };
-export type Overview = { status: Status; metadata: Metadata; latest: Summary | null };
+export type Overview = { status: Status; metadata: Metadata; latest: Summary | null; automaticStorage: { bytes: number; count: number } };
 
 export function errorMessage(error: unknown): string
 {
