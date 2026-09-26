@@ -76,7 +76,7 @@ export default defineBackground(() =>
         await badge();
         return { kind: 'overview', overview: await controller.overview(), captureResult };
       }
-      case 'history': return { kind: 'history', ...await controller.repository.history(request.before, request.before ? HISTORY_PAGE_LIMIT : HISTORY_INITIAL_LIMIT, request.collection, request.query) };
+      case 'history': return { kind: 'history', ...await controller.repository.history(request.before, request.before ? HISTORY_PAGE_LIMIT : HISTORY_INITIAL_LIMIT, request.collection, request.query, request.sort) };
       case 'snapshot': return { kind: 'snapshot', snapshot: await controller.repository.get(request.id) };
       case 'rename': return { kind: 'renamed', summary: await controller.repository.rename(request.id, request.name) };
       case 'keep': return { kind: 'renamed', summary: await controller.repository.keep(request.id, request.name, Date.now()) };

@@ -9,7 +9,8 @@ export type Collection = 'saved' | 'automatic';
 export type Summary = Pick<Snapshot, 'id' | 'number' | 'name' | 'capturedAt' | 'source' | 'savedAt'> & {
   windowCount: number; tabCount: number; supportedCount: number; bytes: number;
 };
-export type HistoryCursor = Pick<Summary, 'capturedAt' | 'id'>;
+export type HistorySort = 'date-desc' | 'date-asc' | 'number-desc' | 'number-asc';
+export type HistoryCursor = Pick<Summary, 'capturedAt' | 'number' | 'id'>;
 export type RestoreProgress = {
   snapshotId: string; startedAt: number; opened: number; skipped: number; failed: number;
   groupErrors: number; total: number; errors: string[];

@@ -50,6 +50,7 @@ export function automaticSettings(onOverview: (overview: Overview) => void, onSa
   frequencyRow.append(wrapSelect(frequency));
 
   const duration = dropdown([['15', '15 minutes'], ['60', '1 hour'], ['1440', '24 hours']]);
+  duration.value = '60';
   const pauseRow = row('Pause backups', 'Pause automatic backups temporarily. They resume when the pause timer ends.', 'automatic-pause', duration);
   const pause = button('Pause', icons.Clock3);
   const resume = button('Resume now', icons.RotateCcw);

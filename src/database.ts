@@ -1,6 +1,7 @@
 import { applyAutomaticUpdate, DEFAULT_AUTOMATIC_SETTINGS } from './automatic';
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
-import type { AutomaticUpdate, CaptureResult, Collection, HistoryCursor, Metadata, Operation, Session, Snapshot, Source, StorageSettings, StorageSettingsResult, Summary } from './model';
+import type { AutomaticUpdate, CaptureResult, Collection, HistoryCursor, HistorySort, Metadata, Operation, Session, Snapshot, Source, StorageSettings, StorageSettingsResult, Summary } from './model';
+import { compareHistory } from './history';
 import type { Archive } from './archive';
 import { canonicalSession, summarize } from './session';
 import { DEFAULT_STORAGE_SETTINGS, MB, retentionPlan } from './storage';
@@ -88,7 +89,7 @@ export class Repository {
     return (await this.history(before, limit)).items;
   }
 
-  async history(before: HistoryCursor | null = null, limit = 50, collection?: Collection, query = ''): Promise<{ items: Summary[]; count: number; bytes: number }>
+  async history(before: HistoryCursor | null = null, limit = 50, collection?: Collection, query = '', sort: HistorySort = 'date-desc'): Promise<{ items: Summary[]; count: number; bytes: number }>
   {
     const db = await this.db();
     const transaction = db.transaction('summaries');
@@ -97,12 +98,13 @@ export class Repository {
     let count = 0;
     let bytes = 0;
     const search = query.trim().toLocaleLowerCase();
-    for (const item of summaries.reverse()) {
+    if (limit > 0) summaries.sort((a, b) => compareHistory(a, b, sort));
+    for (const item of summaries) {
       const matches = collection === undefined || (item.savedAt !== undefined) === (collection === 'saved');
       if (matches) { count++; bytes += item.bytes; }
-      // use the primary key to break timestamp ties after the anchor is pruned
+      // filter the full collection before paging in the selected order
       if (matches && result.length < limit && (item.name ?? 'Unnamed session').toLocaleLowerCase().includes(search) &&
-          (!before || item.capturedAt < before.capturedAt || (item.capturedAt === before.capturedAt && item.id < before.id))) result.push(item);
+          (!before || compareHistory(item, before, sort) > 0)) result.push(item);
     }
     await transaction.done;
     return { items: result, count, bytes };

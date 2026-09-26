@@ -1,11 +1,11 @@
-import { createElement, Archive, ArrowUpRight, Check, ChevronDown, CircleAlert, CircleQuestionMark, Clock3, Download, FileText, Globe, HardDrive, History, LoaderCircle, LockKeyhole, Monitor, Palette, Pencil, Pin, RotateCcw, Save, Settings, ShieldCheck, Trash2, Upload, type IconNode } from 'lucide';
+import { createElement, Archive, ArrowDown, ArrowUp, ArrowUpDown, ArrowUpRight, Check, ChevronDown, CircleAlert, CircleQuestionMark, Clock3, Download, FileText, Globe, HardDrive, History, LoaderCircle, LockKeyhole, Monitor, Palette, Pencil, Pin, RotateCcw, Save, Settings, ShieldCheck, Trash2, Upload, type IconNode } from 'lucide';
 import type { Data, Reply, Request } from '../protocol';
 import type { Overview } from '../model';
 import { initializeAppearance } from './appearance';
 import { initializeDates, setTimestamp, timestamp } from './dates';
 import './style.css';
 
-export const icons = { Archive, ArrowUpRight, Check, ChevronDown, CircleAlert, CircleQuestionMark, Clock3, Download, FileText, Globe, HardDrive, History, LoaderCircle, LockKeyhole, Monitor, Palette, Pencil, Pin, RotateCcw, Save, Settings, ShieldCheck, Trash2, Upload };
+export const icons = { Archive, ArrowDown, ArrowUp, ArrowUpDown, ArrowUpRight, Check, ChevronDown, CircleAlert, CircleQuestionMark, Clock3, Download, FileText, Globe, HardDrive, History, LoaderCircle, LockKeyhole, Monitor, Palette, Pencil, Pin, RotateCcw, Save, Settings, ShieldCheck, Trash2, Upload };
 
 export function icon(node: IconNode, size = 16): SVGElement
 {

@@ -198,7 +198,7 @@ export function createSettingsView(onSaved: () => void)
   }
   function restoreDraft(settings: StorageSettings): void
   {
-    age.input.value = String(settings.retentionDays ?? 30);
+    age.input.value = String(settings.retentionDays ?? 90);
     ageLimit.toggle.checked = settings.retentionDays !== null;
     count.input.value = String(settings.maxBackups ?? 2000);
     countLimit.toggle.checked = settings.maxBackups !== null;

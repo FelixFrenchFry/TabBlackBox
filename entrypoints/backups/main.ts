@@ -1,5 +1,6 @@
 import { timestamp } from '../../src/ui/dates';
-import { errorMessage, type Collection, type Operation, type Overview, type Snapshot, type Summary } from '../../src/model';
+import { errorMessage, type Collection, type HistorySort, type Operation, type Overview, type Snapshot, type Summary } from '../../src/model';
+import { compareHistory, parseHistorySort } from '../../src/history';
 import { parseArchive } from '../../src/archive';
 import { MB } from '../../src/storage';
 import { FILE_ACCESS_MESSAGE, fileUrl, restorableUrl, selectWindows } from '../../src/session';
@@ -39,6 +40,12 @@ const feedback = el('div');
 feedback.setAttribute('aria-live', 'polite');
 const toast = createToast();
 
+function readHistorySort(collection: Collection): HistorySort
+{
+  try { return parseHistorySort(localStorage.getItem(`tabblackbox.history-sort.${collection}`)); }
+  catch { return 'date-desc'; }
+}
+
 function historyPanel(collection: Collection)
 {
   const element = el('section', `history-panel ${collection}-backups`);
@@ -49,14 +56,47 @@ function historyPanel(collection: Collection)
   const count = el('span', 'badge', '0');
   const usage = el('span', 'muted panel-usage');
   const help = createHelp(`${collection}-help`, `About ${title.toLowerCase()}`, collection === 'saved' ? 'Sessions you choose to keep until you delete them. Select "Back up now" to save your current session, or select "Keep session" to move an automatic backup into this category. Manual backups are excluded from storage limits and automatic deletions. You can export sessions to keep a copy outside your browser, or import previously exported sessions.' : 'History of your tabs, windows, and tab groups. These sessions are saved periodically according to your automatic backup settings. Older backups are deleted automatically according to your storage limit settings.');
-  header.append(icon(collection === 'saved' ? icons.Archive : icons.History), el('h2', '', title), help, count, usage);
+  header.append(icon(collection === 'saved' ? icons.Archive : icons.History), el('h2', '', title), help, count);
+  const toolbar = el('div', 'archive-toolbar');
+  const sortControls = el('div', 'history-sort-controls');
+  sortControls.setAttribute('role', 'group');
+  sortControls.setAttribute('aria-label', 'Sort backups');
+  const sortButtons = (['number', 'date'] as const).map(property => {
+    const element = el('button', 'history-sort-button');
+    element.type = 'button';
+    sortControls.append(element);
+    return { property, element };
+  });
+  const panelTools = el('div', 'panel-tools');
+  panelTools.append(sortControls, usage);
+  header.append(panelTools);
+  function updateSort(sort: HistorySort): void
+  {
+    for (const { property, element } of sortButtons) {
+      const selected = sort.startsWith(`${property}-`);
+      const ascending = selected && sort.endsWith('-asc');
+      const label = property === 'date' ? 'Date' : 'Number';
+      const ascendingLabel = property === 'date' ? 'oldest first' : 'lowest first';
+      const descendingLabel = property === 'date' ? 'newest first' : 'highest first';
+      const current = selected ? ascending ? ascendingLabel : descendingLabel : 'not sorted';
+      const next = selected && !ascending ? ascendingLabel : descendingLabel;
+      element.title = `${label}, ${current}. Sort ${next}`;
+      element.setAttribute('aria-label', element.title);
+      element.setAttribute('aria-pressed', String(selected));
+      element.replaceChildren(el('span', '', label), icon(selected ? ascending ? icons.ArrowUp : icons.ArrowDown : icons.ArrowUpDown, 14));
+    }
+  }
+  const sort = readHistorySort(collection);
+  updateSort(sort);
   const rows = el('div');
-  const more = button(collection === 'saved' ? 'Load more saved sessions' : 'Load older backups', icons.ChevronDown, 'button load-more');
+  const more = button(collection === 'saved' ? 'Load more saved sessions' : 'Load more backups', icons.ChevronDown, 'button load-more');
   more.hidden = true;
-  list.append(header, rows);
+  list.append(header);
+  if (collection === 'saved') list.append(toolbar);
+  list.append(rows);
   element.append(list, more);
   const items: Summary[] = [];
-  return { element, list, header, count, usage, rows, more, collection, query: '', items, generation: 0, sessionRows: new Map<string, ReturnType<typeof row>>() };
+  return { element, list, header, toolbar, sortButtons, updateSort, sort, loadedSort: sort, rememberSort: false, count, usage, rows, more, collection, query: '', items, generation: 0, sessionRows: new Map<string, ReturnType<typeof row>>() };
 }
 
 const savedPanel = historyPanel('saved');
@@ -64,14 +104,13 @@ const automaticPanel = historyPanel('automatic');
 const panels = [savedPanel, automaticPanel];
 const exportAll = button('Export all', icons.Download);
 const importSessions = button('Import', icons.Upload);
-const archiveActions = el('div', 'archive-toolbar');
 const search = el('input', 'session-name-input archive-search');
 search.type = 'search';
 search.placeholder = 'Search session names';
 search.setAttribute('aria-label', 'Search session names');
 search.maxLength = SESSION_NAME_LIMIT;
-archiveActions.append(search, backup.element, exportAll, importSessions);
-savedPanel.list.insertBefore(archiveActions, savedPanel.rows);
+savedPanel.toolbar.prepend(search);
+savedPanel.toolbar.append(backup.element, exportAll, importSessions);
 const footer = el('footer', 'history-footer');
 footer.append(icon(icons.HardDrive), el('span', '', 'Backups are stored on this device. Automatic backups are removed as needed. Manual backups stay until deleted explicitly. Export them to keep an external copy.'));
 main.append(heading, status, feedback, ...panels.map(panel => panel.element), footer);
@@ -92,6 +131,22 @@ function showView(): void
 }
 window.addEventListener('hashchange', showView);
 showView();
+
+const sortFeedback = new WeakMap<ReturnType<typeof historyPanel>, HTMLElement>();
+for (const panel of panels) {
+  const element = el('div', 'history-sort-feedback');
+  element.hidden = true;
+  element.setAttribute('aria-live', 'polite');
+  panel.list.insertBefore(element, panel.rows);
+  sortFeedback.set(panel, element);
+}
+
+function historySortFeedback(panel: ReturnType<typeof historyPanel>): HTMLElement
+{
+  const element = sortFeedback.get(panel);
+  if (!element) throw new Error('History sort feedback is missing.');
+  return element;
+}
 
 let latestId: string | null = null;
 let historyCount: number | null = null;
@@ -543,6 +598,10 @@ function row(item: Summary)
 function renderHistory(panel: ReturnType<typeof historyPanel>): void
 {
   const { items, rows, sessionRows } = panel;
+  panel.rows.hidden = false;
+  const sortStatus = historySortFeedback(panel);
+  sortStatus.hidden = true;
+  sortStatus.replaceChildren();
   const ids = new Set(items.map(item => item.id));
   for (const [id, saved] of sessionRows) {
     if (ids.has(id)) continue;
@@ -574,12 +633,15 @@ function renderHistory(panel: ReturnType<typeof historyPanel>): void
 
 async function loadHistory(panel: ReturnType<typeof historyPanel>, reset: boolean, preserveLoaded = false): Promise<void>
 {
-  const { items, more, sessionRows } = panel;
+  const { items, more, sessionRows, sort, query } = panel;
+  const sortChanged = sort !== panel.loadedSort;
+  const rememberSort = panel.rememberSort;
+  const externalSort = sortChanged && !rememberSort;
   const generation = reset ? ++panel.generation : panel.generation;
   const last = reset ? undefined : items.at(-1);
   more.disabled = true;
   try {
-    const data = await request({ kind: 'history', before: last ? { capturedAt: last.capturedAt, id: last.id } : null, collection: panel.collection, query: panel.query });
+    const data = await request({ kind: 'history', before: last ? { capturedAt: last.capturedAt, number: last.number, id: last.id } : null, collection: panel.collection, query, sort });
     if (generation !== panel.generation) return;
     if (data.kind !== 'history') throw new Error('Unexpected history response.');
     panel.count.textContent = String(data.count);
@@ -590,11 +652,11 @@ async function loadHistory(panel: ReturnType<typeof historyPanel>, reset: boolea
     let pageLimit = last ? HISTORY_PAGE_LIMIT : HISTORY_INITIAL_LIMIT;
     const loaded = [...page];
     // retain loaded rows during renames and expanded sessions during new backups
-    while (reset && page.length === pageLimit) {
-      const oldestOpen = preserveLoaded ? items.at(-1) : items.findLast(item => sessionRows.get(item.id)?.details.open);
+    while (reset && !sortChanged && page.length === pageLimit) {
+      const lastVisible = preserveLoaded ? items.at(-1) : items.findLast(item => sessionRows.get(item.id)?.details.open);
       const end = loaded.at(-1);
-      if (!oldestOpen || !end || end.capturedAt < oldestOpen.capturedAt || (end.capturedAt === oldestOpen.capturedAt && end.id <= oldestOpen.id)) break;
-      const older = await request({ kind: 'history', before: { capturedAt: end.capturedAt, id: end.id }, collection: panel.collection, query: panel.query });
+      if (!lastVisible || !end || compareHistory(end, lastVisible, sort) >= 0) break;
+      const older = await request({ kind: 'history', before: { capturedAt: end.capturedAt, number: end.number, id: end.id }, collection: panel.collection, query, sort });
       if (generation !== panel.generation) return;
       if (older.kind !== 'history') throw new Error('Unexpected history response.');
       page = older.items;
@@ -606,10 +668,34 @@ async function loadHistory(panel: ReturnType<typeof historyPanel>, reset: boolea
     renderHistory(panel);
     updateDialogButtons();
     more.hidden = page.length < pageLimit;
+    panel.loadedSort = sort;
+    // remember successful user selections without republishing another page's choice
+    if (panel.rememberSort) {
+      panel.rememberSort = false;
+      try { localStorage.setItem(`tabblackbox.history-sort.${panel.collection}`, sort); }
+      catch (error) { showError(error); }
+    }
   } catch (error) {
-    if (generation === panel.generation) throw error;
+    if (generation === panel.generation) {
+      // keep the visible rows and their pagination boundary in the same order
+      panel.rememberSort = false;
+      if (sortChanged && rememberSort) {
+        panel.sort = panel.loadedSort;
+        panel.updateSort(panel.sort);
+      }
+      if (externalSort) {
+        // keep the changed sort visible until its rows load successfully
+        const status = historySortFeedback(panel);
+        const retry = button('Retry loading backups', icons.RotateCcw);
+        retry.addEventListener('click', () => { void sortHistory(panel, panel.sort, false).catch(showError); });
+        panel.rows.hidden = true;
+        status.hidden = false;
+        status.replaceChildren(notice(errorMessage(error)), retry);
+      }
+      throw error;
+    }
   } finally {
-    if (generation === panel.generation) more.disabled = false;
+    if (generation === panel.generation) more.disabled = panel.sort !== panel.loadedSort;
   }
 }
 
@@ -618,6 +704,28 @@ function searchHistory(query: string): Promise<void>
   search.value = savedPanel.query = query;
   // invalidate pending results and reload independently of overview polling
   return loadHistory(savedPanel, true);
+}
+
+function sortHistory(panel: ReturnType<typeof historyPanel>, sort: HistorySort, remember = true): Promise<void>
+{
+  panel.sort = sort;
+  panel.rememberSort = remember;
+  panel.updateSort(sort);
+  // retain rows while local sort changes load
+  if (remember) {
+    const status = historySortFeedback(panel);
+    panel.rows.hidden = false;
+    status.hidden = true;
+    status.replaceChildren();
+    return loadHistory(panel, true);
+  }
+  const status = historySortFeedback(panel);
+  panel.rows.hidden = true;
+  status.hidden = false;
+  status.replaceChildren(el('p', 'muted', 'Loading backups…'));
+  const load = loadHistory(panel, true);
+  panel.rows.hidden = true;
+  return load;
 }
 
 function updateSave(): void
@@ -668,9 +776,21 @@ const refresh = createRefreshQueue(async kind =>
     settings.showError(errorMessage(error));
   }
 }, value => { backingUp = value; updateSave(); updateDialogButtons(); });
-for (const panel of panels) panel.more.addEventListener('click', () =>
-{
-  void loadHistory(panel, false).catch(showError);
+for (const panel of panels) {
+  panel.more.addEventListener('click', () => { void loadHistory(panel, false).catch(showError); });
+  for (const { property, element } of panel.sortButtons) element.addEventListener('click', () => {
+    const sort: HistorySort = property === 'date'
+      ? panel.sort === 'date-desc' ? 'date-asc' : 'date-desc'
+      : panel.sort === 'number-desc' ? 'number-asc' : 'number-desc';
+    void sortHistory(panel, sort).catch(showError);
+  });
+}
+window.addEventListener('storage', event => {
+  for (const panel of panels) {
+    if (event.key !== null && event.key !== `tabblackbox.history-sort.${panel.collection}`) continue;
+    const sort = readHistorySort(panel.collection);
+    if (sort !== panel.sort) void sortHistory(panel, sort, false).catch(showError);
+  }
 });
 search.addEventListener('input', () => {
   void searchHistory(search.value).catch(showError);
