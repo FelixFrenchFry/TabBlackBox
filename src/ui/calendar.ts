@@ -1,6 +1,7 @@
 import { CALENDAR_LEVELS, calendarRange, calendarScale, dayRange } from '../calendar';
 import { errorMessage, type BackupDay, type HistoryRange, type Metadata } from '../model';
-import { createHelp, positionPopover } from './help';
+import { createHelp } from './help';
+import { positionPopover } from './popover';
 import { button, el, icon, icons, request } from './shared';
 
 export function createBackupCalendar(onSelect: (range: HistoryRange | null) => void)

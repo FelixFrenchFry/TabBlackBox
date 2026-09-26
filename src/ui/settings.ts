@@ -108,7 +108,7 @@ export function createSettingsView(onSaved: () => void)
   const dateText = el('div', 'setting-description');
   const dateLabel = el('label', 'setting-name', 'Date format');
   dateLabel.htmlFor = 'date-format';
-  const dateExplanation = el('p', 'muted', 'Choose between exact timestamps like "12. Sept., 2026, 20:55:07", or relative timestamps like “17 minutes ago”, or a combination of them.');
+  const dateExplanation = el('p', 'muted', 'Choose between exact timestamps like "12. Sept., 2026, 20:55:07", or relative timestamps like “17 min ago”, or a combination of them.');
   dateExplanation.id = 'date-format-description';
   dateText.append(dateLabel, dateExplanation);
   const dateSelect = el('select', 'settings-select');

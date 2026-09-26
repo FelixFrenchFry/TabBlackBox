@@ -45,11 +45,11 @@ export function automaticSettings(onOverview: (overview: Overview) => void, onSa
   toggleLabel.append(toggleText, enabled);
   enabledRow.append(toggleLabel);
 
-  const frequency = dropdown([['0', 'After every tab change'], ['1', 'At most once per 1 minute'], ['5', 'At most once per 5 minutes'], ['15', 'At most once per 15 minutes'], ['60', 'At most once per 1 hour'], ['1440', 'At most once per 24 hours']]);
+  const frequency = dropdown([['0', 'After every tab change'], ['1', 'At most once per 1 min'], ['5', 'At most once per 5 min'], ['15', 'At most once per 15 min'], ['60', 'At most once per 1 hour'], ['1440', 'At most once per 24 hours']]);
   const frequencyRow = row('Backup frequency', 'Minimum time between automatic backups. Unchanged sessions are not saved multiple times regardless of this setting.', 'automatic-frequency', frequency);
   frequencyRow.append(wrapSelect(frequency));
 
-  const duration = dropdown([['15', '15 minutes'], ['60', '1 hour'], ['1440', '24 hours']]);
+  const duration = dropdown([['15', '15 min'], ['60', '1 hour'], ['1440', '24 hours']]);
   duration.value = '60';
   const pauseRow = row('Pause backups', 'Pause automatic backups temporarily. They resume when the pause timer ends.', 'automatic-pause', duration);
   const pause = button('Pause', icons.Clock3);

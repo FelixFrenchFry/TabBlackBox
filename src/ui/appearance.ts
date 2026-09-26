@@ -5,8 +5,8 @@ export function readAppearance(): Appearance
 {
   try {
     const value = localStorage.getItem(key);
-    return value === 'light' || value === 'dark' ? value : 'system';
-  } catch { return 'system'; }
+    return value === 'system' || value === 'light' || value === 'dark' ? value : 'dark';
+  } catch { return 'dark'; }
 }
 
 export function setAppearance(value: Appearance): void
