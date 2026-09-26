@@ -1,7 +1,8 @@
 import { applyAutomaticUpdate, DEFAULT_AUTOMATIC_SETTINGS } from './automatic';
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
-import type { AutomaticUpdate, CaptureResult, Collection, HistoryCursor, HistorySort, Metadata, Operation, Session, Snapshot, Source, StorageSettings, StorageSettingsResult, Summary } from './model';
+import type { AutomaticUpdate, BackupDay, CaptureResult, Collection, HistoryCursor, HistoryRange, HistorySort, Metadata, Operation, Session, Snapshot, Source, StorageSettings, StorageSettingsResult, Summary } from './model';
 import { compareHistory } from './history';
+import { dayRange } from './calendar';
 import type { Archive } from './archive';
 import { canonicalSession, summarize } from './session';
 import { DEFAULT_STORAGE_SETTINGS, MB, retentionPlan } from './storage';
@@ -89,7 +90,7 @@ export class Repository {
     return (await this.history(before, limit)).items;
   }
 
-  async history(before: HistoryCursor | null = null, limit = 50, collection?: Collection, query = '', sort: HistorySort = 'date-desc'): Promise<{ items: Summary[]; count: number; bytes: number }>
+  async history(before: HistoryCursor | null = null, limit = 50, collection?: Collection, query = '', sort: HistorySort = 'date-desc', range?: HistoryRange): Promise<{ items: Summary[]; count: number; bytes: number }>
   {
     const db = await this.db();
     const transaction = db.transaction('summaries');
@@ -103,11 +104,26 @@ export class Repository {
       const matches = collection === undefined || (item.savedAt !== undefined) === (collection === 'saved');
       if (matches) { count++; bytes += item.bytes; }
       // filter the full collection before paging in the selected order
-      if (matches && result.length < limit && (item.name ?? 'Unnamed session').toLocaleLowerCase().includes(search) &&
+      if (matches && result.length < limit && (!range || (item.capturedAt >= range.start && item.capturedAt < range.end)) && (item.name ?? 'Unnamed session').toLocaleLowerCase().includes(search) &&
           (!before || compareHistory(item, before, sort) > 0)) result.push(item);
     }
     await transaction.done;
     return { items: result, count, bytes };
+  }
+
+  async calendar(range: HistoryRange): Promise<BackupDay[]>
+  {
+    // aggregate only the displayed period without reading complete snapshots
+    const summaries = await (await this.db()).getAllFromIndex('summaries', 'capturedAt', IDBKeyRange.bound(range.start, range.end, false, true));
+    const days = new Map<number, BackupDay>();
+    for (const item of summaries) {
+      const start = dayRange(item.capturedAt).start;
+      const day = days.get(start) ?? { start, saved: 0, automatic: 0 };
+      if (item.savedAt === undefined) day.automatic++;
+      else day.saved++;
+      days.set(start, day);
+    }
+    return [...days.values()];
   }
 
   async capture(session: Session, source: Source, now: number, name?: string | null): Promise<CaptureResult>

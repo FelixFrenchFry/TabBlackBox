@@ -11,6 +11,8 @@ export type Summary = Pick<Snapshot, 'id' | 'number' | 'name' | 'capturedAt' | '
 };
 export type HistorySort = 'date-desc' | 'date-asc' | 'number-desc' | 'number-asc';
 export type HistoryCursor = Pick<Summary, 'capturedAt' | 'number' | 'id'>;
+export type HistoryRange = { start: number; end: number };
+export type BackupDay = { start: number; saved: number; automatic: number };
 export type RestoreProgress = {
   snapshotId: string; startedAt: number; opened: number; skipped: number; failed: number;
   groupErrors: number; total: number; errors: string[];

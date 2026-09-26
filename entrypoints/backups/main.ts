@@ -1,5 +1,5 @@
 import { timestamp } from '../../src/ui/dates';
-import { errorMessage, type Collection, type HistorySort, type Operation, type Overview, type Snapshot, type Summary } from '../../src/model';
+import { errorMessage, type Collection, type HistoryRange, type HistorySort, type Operation, type Overview, type Snapshot, type Summary } from '../../src/model';
 import { compareHistory, parseHistorySort } from '../../src/history';
 import { parseArchive } from '../../src/archive';
 import { MB } from '../../src/storage';
@@ -11,6 +11,7 @@ import { createBackupButton } from '../../src/ui/backup-button';
 import { createToast } from '../../src/ui/toast';
 import { createHelp } from '../../src/ui/help';
 import { createSettingsView } from '../../src/ui/settings';
+import { createBackupCalendar } from '../../src/ui/calendar';
 import { HISTORY_INITIAL_LIMIT, HISTORY_PAGE_LIMIT, SESSION_NAME_LIMIT } from '../../src/protocol';
 
 const root = setup();
@@ -88,20 +89,31 @@ function historyPanel(collection: Collection)
   }
   const sort = readHistorySort(collection);
   updateSort(sort);
-  const rows = el('div');
-  const more = button(collection === 'saved' ? 'Load more saved sessions' : 'Load more backups', icons.ChevronDown, 'button load-more');
+  const content = el('div', 'history-content');
+  const rows = el('div', 'history-rows');
+  const dateFeedback = el('div', 'history-date-feedback');
+  dateFeedback.hidden = true;
+  dateFeedback.setAttribute('aria-live', 'polite');
+  const more = button('Load more backups', icons.ChevronDown, 'button load-more');
   more.hidden = true;
   list.append(header);
   if (collection === 'saved') list.append(toolbar);
-  list.append(rows);
+  content.append(dateFeedback, rows);
+  list.append(content);
   element.append(list, more);
   const items: Summary[] = [];
-  return { element, list, header, toolbar, sortButtons, updateSort, sort, loadedSort: sort, rememberSort: false, count, usage, rows, more, collection, query: '', items, generation: 0, sessionRows: new Map<string, ReturnType<typeof row>>() };
+  const filter: { loadedRange: HistoryRange | null } = { loadedRange: null };
+  return { element, list, content, header, toolbar, sortButtons, updateSort, sort, loadedSort: sort, rememberSort: false, count, usage, dateFeedback, rows, more, collection, query: '', items, ...filter, generation: 0, sessionRows: new Map<string, ReturnType<typeof row>>() };
 }
 
 const savedPanel = historyPanel('saved');
 const automaticPanel = historyPanel('automatic');
 const panels = [savedPanel, automaticPanel];
+let historyRange: HistoryRange | null = null;
+const calendar = createBackupCalendar(range => {
+  historyRange = range;
+  void Promise.all(panels.map(panel => loadHistory(panel, true))).catch(showError);
+});
 const exportAll = button('Export all', icons.Download);
 const importSessions = button('Import', icons.Upload);
 const search = el('input', 'session-name-input archive-search');
@@ -113,7 +125,7 @@ savedPanel.toolbar.prepend(search);
 savedPanel.toolbar.append(backup.element, exportAll, importSessions);
 const footer = el('footer', 'history-footer');
 footer.append(icon(icons.HardDrive), el('span', '', 'Backups are stored on this device. Automatic backups are removed as needed. Manual backups stay until deleted explicitly. Export them to keep an external copy.'));
-main.append(heading, status, feedback, ...panels.map(panel => panel.element), footer);
+main.append(heading, status, feedback, calendar.element, ...panels.map(panel => panel.element), footer);
 const settings = createSettingsView(() => toast.show('Settings have been saved'));
 root.append(header, nav, main, settings.element, toast.element);
 
@@ -137,7 +149,7 @@ for (const panel of panels) {
   const element = el('div', 'history-sort-feedback');
   element.hidden = true;
   element.setAttribute('aria-live', 'polite');
-  panel.list.insertBefore(element, panel.rows);
+  panel.list.insertBefore(element, panel.content);
   sortFeedback.set(panel, element);
 }
 
@@ -151,6 +163,7 @@ function historySortFeedback(panel: ReturnType<typeof historyPanel>): HTMLElemen
 let latestId: string | null = null;
 let historyCount: number | null = null;
 let historyRevision: number | null = null;
+let historyInvalidated = false;
 let restoring = false;
 let backingUp = false;
 let lastOperation: Operation | null | undefined;
@@ -598,7 +611,7 @@ function row(item: Summary)
 function renderHistory(panel: ReturnType<typeof historyPanel>): void
 {
   const { items, rows, sessionRows } = panel;
-  panel.rows.hidden = false;
+  panel.rows.inert = false;
   const sortStatus = historySortFeedback(panel);
   sortStatus.hidden = true;
   sortStatus.replaceChildren();
@@ -624,8 +637,8 @@ function renderHistory(panel: ReturnType<typeof historyPanel>): void
   }
   if (!items.length) {
     const empty = el('div', 'empty-state');
-    const title = panel.query ? 'No matching saved sessions' : panel.collection === 'saved' ? 'Keep sessions for later' : 'Your backup history starts here';
-    const description = panel.query ? 'Try another session name.' : panel.collection === 'saved' ? 'Choose Back up now or select Keep on an automatic backup below.' : 'Open some tabs and enable automatic backups in Settings. Changes will be saved according to your automatic backup settings.';
+    const title = panel.loadedRange ? 'No matching backups on this date' : panel.query ? 'No matching saved sessions' : panel.collection === 'saved' ? 'Keep sessions for later' : 'Your backup history starts here';
+    const description = panel.loadedRange ? 'Choose another day or clear the date filter.' : panel.query ? 'Try another session name.' : panel.collection === 'saved' ? 'Choose Back up now or select Keep on an automatic backup below.' : 'Open some tabs and enable automatic backups in Settings. Changes will be saved according to your automatic backup settings.';
     empty.append(icon(icons.Archive, 32), el('h2', '', title), el('p', 'muted', description));
     rows.append(empty);
   }
@@ -634,14 +647,21 @@ function renderHistory(panel: ReturnType<typeof historyPanel>): void
 async function loadHistory(panel: ReturnType<typeof historyPanel>, reset: boolean, preserveLoaded = false): Promise<void>
 {
   const { items, more, sessionRows, sort, query } = panel;
+  const range = historyRange;
+  const rangeChanged = range?.start !== panel.loadedRange?.start || range?.end !== panel.loadedRange?.end;
+  const dateFilter = range ? { range } : {};
   const sortChanged = sort !== panel.loadedSort;
   const rememberSort = panel.rememberSort;
   const externalSort = sortChanged && !rememberSort;
   const generation = reset ? ++panel.generation : panel.generation;
   const last = reset ? undefined : items.at(-1);
   more.disabled = true;
+  // retain the list height while preventing interaction with a different day's rows
+  panel.rows.inert = rangeChanged;
+  panel.dateFeedback.hidden = !rangeChanged;
+  if (rangeChanged) panel.dateFeedback.replaceChildren(el('p', 'muted', 'Loading backups…'));
   try {
-    const data = await request({ kind: 'history', before: last ? { capturedAt: last.capturedAt, number: last.number, id: last.id } : null, collection: panel.collection, query, sort });
+    const data = await request({ kind: 'history', before: last ? { capturedAt: last.capturedAt, number: last.number, id: last.id } : null, collection: panel.collection, query, sort, ...dateFilter });
     if (generation !== panel.generation) return;
     if (data.kind !== 'history') throw new Error('Unexpected history response.');
     panel.count.textContent = String(data.count);
@@ -652,11 +672,11 @@ async function loadHistory(panel: ReturnType<typeof historyPanel>, reset: boolea
     let pageLimit = last ? HISTORY_PAGE_LIMIT : HISTORY_INITIAL_LIMIT;
     const loaded = [...page];
     // retain loaded rows during renames and expanded sessions during new backups
-    while (reset && !sortChanged && page.length === pageLimit) {
+    while (reset && !sortChanged && !rangeChanged && page.length === pageLimit) {
       const lastVisible = preserveLoaded ? items.at(-1) : items.findLast(item => sessionRows.get(item.id)?.details.open);
       const end = loaded.at(-1);
       if (!lastVisible || !end || compareHistory(end, lastVisible, sort) >= 0) break;
-      const older = await request({ kind: 'history', before: { capturedAt: end.capturedAt, number: end.number, id: end.id }, collection: panel.collection, query, sort });
+      const older = await request({ kind: 'history', before: { capturedAt: end.capturedAt, number: end.number, id: end.id }, collection: panel.collection, query, sort, ...dateFilter });
       if (generation !== panel.generation) return;
       if (older.kind !== 'history') throw new Error('Unexpected history response.');
       page = older.items;
@@ -665,10 +685,13 @@ async function loadHistory(panel: ReturnType<typeof historyPanel>, reset: boolea
     }
     if (reset) panel.items = loaded;
     else panel.items.push(...loaded);
+    panel.loadedRange = range;
+    panel.dateFeedback.hidden = true;
     renderHistory(panel);
     updateDialogButtons();
     more.hidden = page.length < pageLimit;
     panel.loadedSort = sort;
+    if (externalSort) panel.updateSort(sort);
     // remember successful user selections without republishing another page's choice
     if (panel.rememberSort) {
       panel.rememberSort = false;
@@ -677,6 +700,11 @@ async function loadHistory(panel: ReturnType<typeof historyPanel>, reset: boolea
     }
   } catch (error) {
     if (generation === panel.generation) {
+      if (rangeChanged) {
+        const retry = button('Retry loading backups', icons.RotateCcw);
+        retry.addEventListener('click', () => { void loadHistory(panel, true).catch(showError); });
+        panel.dateFeedback.replaceChildren(notice(errorMessage(error)), retry);
+      }
       // keep the visible rows and their pagination boundary in the same order
       panel.rememberSort = false;
       if (sortChanged && rememberSort) {
@@ -684,18 +712,30 @@ async function loadHistory(panel: ReturnType<typeof historyPanel>, reset: boolea
         panel.updateSort(panel.sort);
       }
       if (externalSort) {
-        // keep the changed sort visible until its rows load successfully
+        // retain the displayed order while allowing the external preference to be retried
         const status = historySortFeedback(panel);
         const retry = button('Retry loading backups', icons.RotateCcw);
         retry.addEventListener('click', () => { void sortHistory(panel, panel.sort, false).catch(showError); });
-        panel.rows.hidden = true;
         status.hidden = false;
         status.replaceChildren(notice(errorMessage(error)), retry);
       }
       throw error;
     }
   } finally {
-    if (generation === panel.generation) more.disabled = panel.sort !== panel.loadedSort;
+    if (generation === panel.generation) more.disabled = panel.sort !== panel.loadedSort || panel.loadedRange?.start !== historyRange?.start || panel.loadedRange?.end !== historyRange?.end;
+  }
+}
+
+function resetHistoryFilters(): void
+{
+  search.value = savedPanel.query = '';
+  historyRange = null;
+  calendar.clear();
+  // discard pending filtered results and reload both panels through the next overview
+  historyInvalidated = true;
+  for (const panel of panels) {
+    panel.generation++;
+    panel.more.disabled = true;
   }
 }
 
@@ -710,22 +750,12 @@ function sortHistory(panel: ReturnType<typeof historyPanel>, sort: HistorySort, 
 {
   panel.sort = sort;
   panel.rememberSort = remember;
-  panel.updateSort(sort);
-  // retain rows while local sort changes load
-  if (remember) {
-    const status = historySortFeedback(panel);
-    panel.rows.hidden = false;
-    status.hidden = true;
-    status.replaceChildren();
-    return loadHistory(panel, true);
-  }
+  // external preferences update the sort indication together with their loaded rows
+  panel.updateSort(remember ? sort : panel.loadedSort);
   const status = historySortFeedback(panel);
-  panel.rows.hidden = true;
-  status.hidden = false;
-  status.replaceChildren(el('p', 'muted', 'Loading backups…'));
-  const load = loadHistory(panel, true);
-  panel.rows.hidden = true;
-  return load;
+  status.hidden = true;
+  status.replaceChildren();
+  return loadHistory(panel, true);
 }
 
 function updateSave(): void
@@ -758,11 +788,15 @@ const refresh = createRefreshQueue(async kind =>
   try {
     const data = await request({ kind });
     if (data.kind !== 'overview') throw new Error('Unexpected background response.');
-    if (kind === 'backup' && data.captureResult?.kind === 'saved') await searchHistory('');
+    if (kind === 'backup' && data.captureResult?.kind === 'saved') resetHistoryFilters();
     await updateFileAccess();
     applyOverview(data.overview);
-    if (latestId !== data.overview.metadata.latestId || historyCount !== data.overview.metadata.count || historyRevision !== data.overview.metadata.historyRevision || panels.some(panel => !panel.rows.childElementCount)) {
-      await Promise.all(panels.map(panel => loadHistory(panel, true, historyRevision !== null && historyRevision !== data.overview.metadata.historyRevision)));
+    void calendar.update(data.overview.metadata);
+    if (historyInvalidated || latestId !== data.overview.metadata.latestId || historyCount !== data.overview.metadata.count || historyRevision !== data.overview.metadata.historyRevision || panels.some(panel => !panel.rows.childElementCount)) {
+      historyInvalidated = false;
+      try {
+        await Promise.all(panels.map(panel => loadHistory(panel, true, historyRevision !== null && historyRevision !== data.overview.metadata.historyRevision)));
+      } catch (error) { historyInvalidated = true; throw error; }
       latestId = data.overview.metadata.latestId;
       historyCount = data.overview.metadata.count;
       historyRevision = data.overview.metadata.historyRevision;
@@ -779,9 +813,10 @@ const refresh = createRefreshQueue(async kind =>
 for (const panel of panels) {
   panel.more.addEventListener('click', () => { void loadHistory(panel, false).catch(showError); });
   for (const { property, element } of panel.sortButtons) element.addEventListener('click', () => {
+    const current = panel.rememberSort ? panel.sort : panel.loadedSort;
     const sort: HistorySort = property === 'date'
-      ? panel.sort === 'date-desc' ? 'date-asc' : 'date-desc'
-      : panel.sort === 'number-desc' ? 'number-asc' : 'number-desc';
+      ? current === 'date-desc' ? 'date-asc' : 'date-desc'
+      : current === 'number-desc' ? 'number-asc' : 'number-desc';
     void sortHistory(panel, sort).catch(showError);
   });
 }
@@ -811,7 +846,7 @@ importFile.addEventListener('change', () => {
     try {
       const archive = parseArchive(JSON.parse(await file.text()));
       await request({ kind: 'import', archive });
-      await searchHistory('');
+      resetHistoryFilters();
       await refresh('overview');
       toast.show(`${plural(archive.sessions.length, 'session')} imported`);
     } catch (error) { showError(error); }
