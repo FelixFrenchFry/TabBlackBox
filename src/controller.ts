@@ -3,7 +3,7 @@ import { StorageLimitExceededError } from './storage';
 import type { Repository } from './database';
 import { errorMessage, type AutomaticSettings, type AutomaticUpdate, type CaptureResult, type Overview, type Session, type Snapshot, type Source, type Status, type StorageSettings, type StorageSettingsResult } from './model';
 import { restoreSession, type RestorePort } from './restore';
-import { FILE_ACCESS_MESSAGE, fileUrl, restorableUrl, selectWindows, summarize } from './session';
+import { FILE_ACCESS_MESSAGE, fileUrl, restorableUrl, selectWindows } from './session';
 
 export class BackupBusyError extends Error {
   constructor() { super('Restoration in progress. Try backing up again when it finishes.'); }
@@ -224,9 +224,9 @@ export class Controller {
     try { await this.start(); }
     catch { /* saved backups remain readable when recovery needs a write */ }
     const metadata = await this.repository.metadata();
-    const newest = metadata.latestId ? await this.repository.get(metadata.latestId) : null;
+    const latest = metadata.latestId ? await this.repository.summary(metadata.latestId) : null;
     const { bytes, count } = await this.repository.history(null, 0, 'automatic');
-    return { status: this.status, metadata, latest: newest ? summarize(newest) : null, automaticStorage: { bytes, count } };
+    return { status: this.status, metadata, latest, automaticStorage: { bytes, count } };
   }
 
   async setStorageSettings(settings: StorageSettings, confirmedRemovalCount: number): Promise<StorageSettingsResult>

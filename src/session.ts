@@ -1,4 +1,4 @@
-import type { GroupColor, SavedWindow, Session, Snapshot, Summary } from './model';
+import type { GroupColor, SavedTab, SavedWindow, Session, Snapshot, StoredSnapshot, StoredTab, Summary } from './model';
 
 export type CaptureTab = { index: number; url?: string; pendingUrl?: string; title?: string; pinned: boolean; groupId: number };
 export type CaptureWindow = { id?: number; type?: string; incognito: boolean; tabs?: CaptureTab[] };
@@ -34,7 +34,34 @@ export function normalizeSession(windows: CaptureWindow[], groups: CaptureGroup[
 
 export function canonicalSession(session: Session): string
 {
-  return JSON.stringify(session.windows.map(window => JSON.stringify(window)).sort());
+  return JSON.stringify(session.windows.map(window => JSON.stringify([
+    window.tabs.map(canonicalTab),
+    window.groups.map(group => [group.name, group.color, group.collapsed]),
+  ])).sort());
+}
+
+export function canonicalTab(tab: SavedTab): string
+{
+  return JSON.stringify([tab.url, tab.title, tab.pinned, tab.group]);
+}
+
+export function encodeSnapshot(snapshot: Snapshot, tabIds: ReadonlyMap<string, number>): StoredSnapshot
+{
+  return { ...snapshot, windows: snapshot.windows.map(window => ({ ...window, tabs: window.tabs.map(tab => {
+    const id = tabIds.get(canonicalTab(tab));
+    if (id === undefined) throw new Error('Tab record has not been allocated.');
+    return id;
+  }) })) };
+}
+
+export function decodeSnapshot(snapshot: StoredSnapshot, tabs: ReadonlyMap<number, StoredTab>): Snapshot
+{
+  // preserve each occurrence and resolve group indices within its saved window
+  return { ...snapshot, windows: snapshot.windows.map(window => ({ ...window, tabs: window.tabs.map(id => {
+    const tab = tabs.get(id);
+    if (!tab) throw new Error('This backup has missing tab data.');
+    return { url: tab.url, title: tab.title, pinned: tab.pinned, group: tab.group };
+  }) })) };
 }
 
 export function selectWindows(snapshot: Snapshot, windowIndex?: number): SavedWindow[]
@@ -66,7 +93,7 @@ export function restorableUrl(url: string | null, fileAccess = false): url is st
 
 export const DAY_MS = 86_400_000;
 
-export function summarize(snapshot: Snapshot): Summary
+export function summarize(snapshot: Snapshot, bytes: number): Summary
 {
   const tabs = snapshot.windows.flatMap(window => window.tabs);
   return {
@@ -74,6 +101,6 @@ export function summarize(snapshot: Snapshot): Summary
     ...(snapshot.savedAt === undefined ? {} : { savedAt: snapshot.savedAt }),
     windowCount: snapshot.windows.length, tabCount: tabs.length,
     supportedCount: tabs.filter(tab => restorableUrl(tab.url, true)).length,
-    bytes: new TextEncoder().encode(JSON.stringify(snapshot)).byteLength,
+    bytes,
   };
 }

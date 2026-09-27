@@ -5,6 +5,9 @@ export type SavedWindow = { tabs: SavedTab[]; groups: SavedGroup[] };
 export type Session = { windows: SavedWindow[] };
 export type Source = 'automatic' | 'manual';
 export type Snapshot = Session & { id: string; number: number; name: string | null; capturedAt: number; source: Source; savedAt?: number };
+export type StoredTab = SavedTab & { id: number };
+export type StoredWindow = Omit<SavedWindow, 'tabs'> & { tabs: number[] };
+export type StoredSnapshot = Omit<Snapshot, 'windows'> & { windows: StoredWindow[] };
 export type Collection = 'saved' | 'automatic';
 export type Summary = Pick<Snapshot, 'id' | 'number' | 'name' | 'capturedAt' | 'source' | 'savedAt'> & {
   windowCount: number; tabCount: number; supportedCount: number; bytes: number;
@@ -31,7 +34,8 @@ export type Metadata = {
   automatic: AutomaticSettings;
   settings: StorageSettings;
   latestId: string | null; lastSavedAt: number | null; lastCheckedAt: number | null;
-  bytes: number; count: number; operation: Operation | null;
+  bytes: number; automaticBytes: number; savedBytes: number; count: number; operation: Operation | null;
+  lastTabId: number;
   lastSessionNumbers: Record<Source, number>; historyRevision: number;
 };
 export type StorageSettings = { retentionDays: number | null; maxBackups: number | null; maxStorageMB: number };
