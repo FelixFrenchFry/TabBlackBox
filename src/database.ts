@@ -1,8 +1,9 @@
 import { applyAutomaticUpdate, DEFAULT_AUTOMATIC_SETTINGS } from './automatic';
 import { openDB, type DBSchema, type IDBPDatabase, type IDBPTransaction } from 'idb';
-import type { AutomaticUpdate, BackupDay, CaptureResult, Collection, HistoryCursor, HistoryRange, HistorySort, Metadata, Operation, Session, Snapshot, Source, StorageSettings, StorageSettingsResult, StoredSnapshot, StoredTab, Summary, TabMatch } from './model';
+import type { AutomaticUpdate, BackupDay, CaptureResult, Collection, HistoryCursor, HistoryRange, HistorySort, Metadata, Operation, Session, Snapshot, Source, StorageSettings, StorageSettingsResult, StoredSnapshot, StoredTab, Summary, TabCountPoint, TabMatch } from './model';
 import { compareHistory } from './history';
 import { dayRange } from './calendar';
+import { thinTabCounts } from './chart';
 import type { Archive } from './archive';
 import { canonicalSession, canonicalTab, decodeSnapshot, encodeSnapshot, snapshotTabIds, summarize } from './session';
 import { DEFAULT_STORAGE_SETTINGS, MB, newestAutomaticId, retentionPlan, retentionRemovals, storageTotals, storedBytes } from './storage';
@@ -198,6 +199,27 @@ export class Repository {
       days.set(start, day);
     }
     return [...days.values()];
+  }
+
+  async tabCounts(range: HistoryRange): Promise<{ points: TabCountPoint[]; before: TabCountPoint | null }>
+  {
+    const transaction = (await this.db()).transaction('summaries');
+    const index = transaction.store.index('capturedAt');
+    // read only summaries so charting never loads complete snapshots
+    const summaries = await index.getAll(IDBKeyRange.bound(range.start, range.end, false, true));
+    // carry the newest earlier automatic count into the start of the period
+    let before: Summary | undefined;
+    for (let cursor = await index.openCursor(IDBKeyRange.upperBound(range.start, true), 'prev'); cursor; cursor = await cursor.continue()) {
+      if (cursor.value.savedAt === undefined) { before = cursor.value; break; }
+    }
+    await transaction.done;
+    const point = (item: Summary): TabCountPoint => ({ id: item.id, number: item.number, capturedAt: item.capturedAt, tabCount: item.tabCount, windowCount: item.windowCount, collection: item.savedAt === undefined ? 'automatic' : 'saved' });
+    const points = summaries.map(point);
+    // reduce each collection separately so manual backups remain visible beside dense automatic history
+    return {
+      points: [...thinTabCounts(points.filter(item => item.collection === 'automatic'), range), ...thinTabCounts(points.filter(item => item.collection === 'saved'), range)],
+      before: before ? point(before) : null,
+    };
   }
 
   async searchTabs(query: string, limit = 100): Promise<{ items: TabMatch[]; truncated: boolean; tooBroad: boolean }>

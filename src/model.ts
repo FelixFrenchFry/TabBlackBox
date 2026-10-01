@@ -12,6 +12,7 @@ export type Collection = 'saved' | 'automatic';
 export type Summary = Pick<Snapshot, 'id' | 'number' | 'name' | 'capturedAt' | 'source' | 'savedAt'> & {
   windowCount: number; tabCount: number; supportedCount: number; bytes: number;
 };
+export type TabCountPoint = Pick<Summary, 'id' | 'number' | 'capturedAt' | 'tabCount' | 'windowCount'> & { collection: Collection };
 export type TabMatch = { url: string; title: string; lastSeen: number; lastSeenNumber: number; lastSeenCollection: Collection; automaticCount: number; savedCount: number };
 export type HistorySort = 'date-desc' | 'date-asc' | 'number-desc' | 'number-asc';
 export type HistoryCursor = Pick<Summary, 'capturedAt' | 'number' | 'id'>;

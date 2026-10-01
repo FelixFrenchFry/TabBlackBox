@@ -12,6 +12,7 @@ import { createToast } from '../../src/ui/toast';
 import { createHelp } from '../../src/ui/help';
 import { createSettingsView } from '../../src/ui/settings';
 import { createBackupCalendar } from '../../src/ui/calendar';
+import { createTabChart } from '../../src/ui/tab-chart';
 import { createTabSearch } from '../../src/ui/tab-search';
 import { setTooltip } from '../../src/ui/tooltip';
 import { HISTORY_INITIAL_LIMIT, HISTORY_PAGE_LIMIT, SESSION_NAME_LIMIT } from '../../src/protocol';
@@ -117,6 +118,7 @@ const calendar = createBackupCalendar(range => {
   historyRange = range;
   void Promise.all(panels.map(panel => loadHistory(panel, true))).catch(showError);
 });
+const tabChart = createTabChart();
 const tabSearch = createTabSearch({ label: tabLabel, show: filterByTab });
 const tabFilter = el('div', 'tab-filter');
 tabFilter.hidden = true;
@@ -135,7 +137,7 @@ savedPanel.toolbar.prepend(search);
 savedPanel.toolbar.append(backup.element, exportAll, importSessions);
 const footer = el('footer', 'history-footer');
 footer.append(icon(icons.HardDrive), el('span', '', 'Backups are stored on this device. Automatic backups are removed as needed. Manual backups stay until deleted explicitly. Export them to keep an external copy.'));
-main.append(heading, status, feedback, calendar.element, tabSearch.element, tabFilter, ...panels.map(panel => panel.element), footer);
+main.append(heading, status, feedback, calendar.element, tabChart.element, tabSearch.element, tabFilter, ...panels.map(panel => panel.element), footer);
 const settings = createSettingsView(() => toast.show('Settings have been saved'));
 root.append(header, nav, main, settings.element, toast.element);
 
@@ -493,6 +495,12 @@ function showError(error: unknown): void
   feedback.replaceChildren(notice(errorMessage(error)));
 }
 
+function showExportError(error: unknown): void
+{
+  // report failed downloads temporarily without shifting the history layout
+  toast.show(errorMessage(error), icons.CircleAlert);
+}
+
 async function downloadArchive(id?: string): Promise<void>
 {
   const data = await request(id === undefined ? { kind: 'export' } : { kind: 'export', id });
@@ -609,7 +617,7 @@ function row(item: Summary)
   const exportSession = button('', icons.Download, 'button small');
   exportSession.setAttribute('aria-label', 'Export session');
   setTooltip(exportSession, 'Export session to a file');
-  exportSession.addEventListener('click', () => { void downloadArchive(item.id).catch(showError); });
+  exportSession.addEventListener('click', () => { void downloadArchive(item.id).catch(showExportError); });
   const remove = button('', icons.Trash2, 'button small');
   remove.setAttribute('aria-label', 'Delete session');
   setTooltip(remove, item.savedAt === undefined ? 'Delete this automatic backup' : 'Delete this saved session');
@@ -807,9 +815,9 @@ function updateDialogButtons(): void
   for (const [button, tabCount] of restoreButtons) button.disabled = sessionDialogLock.active || !canRestore({ tabCount, backingUp, restoring });
   for (const panel of panels) for (const [id, saved] of panel.sessionRows) {
     saved.rename.disabled = sessionDialogLock.active;
-    saved.keep.disabled = saved.remove.disabled = sessionDialogLock.active || backingUp || restoring;
-    // hide deletion for the protected newest automatic backup
-    saved.remove.hidden = panel.collection === 'automatic' && id === newestId;
+    saved.keep.disabled = sessionDialogLock.active || backingUp || restoring;
+    // show deletion as unavailable for the protected newest automatic backup
+    saved.remove.disabled = saved.keep.disabled || (panel.collection === 'automatic' && id === newestId);
   }
 }
 
@@ -834,6 +842,7 @@ const refresh = createRefreshQueue(async kind =>
     await updateFileAccess();
     applyOverview(data.overview);
     void calendar.update(data.overview.metadata);
+    void tabChart.update(data.overview.metadata);
     if (historyInvalidated || latestId !== data.overview.metadata.latestId || historyCount !== data.overview.metadata.count || historyRevision !== data.overview.metadata.historyRevision || panels.some(panel => !panel.rows.childElementCount)) {
       historyInvalidated = false;
       try {
@@ -874,7 +883,7 @@ window.addEventListener('storage', event => {
 search.addEventListener('input', () => {
   void searchHistory(search.value).catch(showError);
 });
-exportAll.addEventListener('click', () => { void downloadArchive().catch(showError); });
+exportAll.addEventListener('click', () => { void downloadArchive().catch(showExportError); });
 const importFile = el('input');
 importFile.type = 'file';
 importFile.accept = '.json,application/json';
