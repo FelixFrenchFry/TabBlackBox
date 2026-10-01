@@ -7,11 +7,12 @@ export type Source = 'automatic' | 'manual';
 export type Snapshot = Session & { id: string; number: number; name: string | null; capturedAt: number; source: Source; savedAt?: number };
 export type StoredTab = SavedTab & { id: number };
 export type StoredWindow = Omit<SavedWindow, 'tabs'> & { tabs: number[] };
-export type StoredSnapshot = Omit<Snapshot, 'windows'> & { windows: StoredWindow[] };
+export type StoredSnapshot = Omit<Snapshot, 'windows'> & { windows: StoredWindow[]; tabIds: number[] };
 export type Collection = 'saved' | 'automatic';
 export type Summary = Pick<Snapshot, 'id' | 'number' | 'name' | 'capturedAt' | 'source' | 'savedAt'> & {
   windowCount: number; tabCount: number; supportedCount: number; bytes: number;
 };
+export type TabMatch = { url: string; title: string; lastSeen: number; lastSeenNumber: number; lastSeenCollection: Collection; automaticCount: number; savedCount: number };
 export type HistorySort = 'date-desc' | 'date-asc' | 'number-desc' | 'number-asc';
 export type HistoryCursor = Pick<Summary, 'capturedAt' | 'number' | 'id'>;
 export type HistoryRange = { start: number; end: number };

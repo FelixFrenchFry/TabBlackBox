@@ -1,4 +1,4 @@
-import type { GroupColor, SavedTab, SavedWindow, Session, Snapshot, StoredSnapshot, StoredTab, Summary } from './model';
+import type { GroupColor, SavedTab, SavedWindow, Session, Snapshot, StoredSnapshot, StoredTab, StoredWindow, Summary } from './model';
 
 export type CaptureTab = { index: number; url?: string; pendingUrl?: string; title?: string; pinned: boolean; groupId: number };
 export type CaptureWindow = { id?: number; type?: string; incognito: boolean; tabs?: CaptureTab[] };
@@ -47,17 +47,25 @@ export function canonicalTab(tab: SavedTab): string
 
 export function encodeSnapshot(snapshot: Snapshot, tabIds: ReadonlyMap<string, number>): StoredSnapshot
 {
-  return { ...snapshot, windows: snapshot.windows.map(window => ({ ...window, tabs: window.tabs.map(tab => {
+  const windows = snapshot.windows.map(window => ({ ...window, tabs: window.tabs.map(tab => {
     const id = tabIds.get(canonicalTab(tab));
     if (id === undefined) throw new Error('Tab record has not been allocated.');
     return id;
-  }) })) };
+  }) }));
+  return { ...snapshot, windows, tabIds: snapshotTabIds(windows) };
+}
+
+export function snapshotTabIds(windows: readonly StoredWindow[]): number[]
+{
+  // list each referenced tab record once for the multi-entry tab index
+  return [...new Set(windows.flatMap(window => window.tabs))];
 }
 
 export function decodeSnapshot(snapshot: StoredSnapshot, tabs: ReadonlyMap<number, StoredTab>): Snapshot
 {
+  const { tabIds, ...stored } = snapshot;
   // preserve each occurrence and resolve group indices within its saved window
-  return { ...snapshot, windows: snapshot.windows.map(window => ({ ...window, tabs: window.tabs.map(id => {
+  return { ...stored, windows: snapshot.windows.map(window => ({ ...window, tabs: window.tabs.map(id => {
     const tab = tabs.get(id);
     if (!tab) throw new Error('This backup has missing tab data.');
     return { url: tab.url, title: tab.title, pinned: tab.pinned, group: tab.group };

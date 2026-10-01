@@ -1,18 +1,20 @@
 import { applyAutomaticUpdate, DEFAULT_AUTOMATIC_SETTINGS } from './automatic';
 import { openDB, type DBSchema, type IDBPDatabase, type IDBPTransaction } from 'idb';
-import type { AutomaticUpdate, BackupDay, CaptureResult, Collection, HistoryCursor, HistoryRange, HistorySort, Metadata, Operation, Session, Snapshot, Source, StorageSettings, StorageSettingsResult, StoredSnapshot, StoredTab, Summary } from './model';
+import type { AutomaticUpdate, BackupDay, CaptureResult, Collection, HistoryCursor, HistoryRange, HistorySort, Metadata, Operation, Session, Snapshot, Source, StorageSettings, StorageSettingsResult, StoredSnapshot, StoredTab, Summary, TabMatch } from './model';
 import { compareHistory } from './history';
 import { dayRange } from './calendar';
 import type { Archive } from './archive';
-import { canonicalSession, canonicalTab, decodeSnapshot, encodeSnapshot, summarize } from './session';
+import { canonicalSession, canonicalTab, decodeSnapshot, encodeSnapshot, snapshotTabIds, summarize } from './session';
 import { DEFAULT_STORAGE_SETTINGS, MB, retentionPlan, retentionRemovals, storageTotals, storedBytes } from './storage';
 
 interface BackupDatabase extends DBSchema {
-  snapshots: { key: string; value: StoredSnapshot };
-  tabs: { key: number; value: StoredTab };
+  snapshots: { key: string; value: StoredSnapshot; indexes: { tabIds: number } };
+  tabs: { key: number; value: StoredTab; indexes: { url: string } };
   summaries: { key: string; value: Summary; indexes: { capturedAt: number } };
   metadata: { key: string; value: Metadata };
 }
+
+const TAB_SEARCH_RECORD_LIMIT = 500;
 
 const initialMetadata = (): Metadata => ({ automatic: { ...DEFAULT_AUTOMATIC_SETTINGS }, settings: { ...DEFAULT_STORAGE_SETTINGS }, latestId: null, lastSavedAt: null, lastCheckedAt: null, bytes: 0, automaticBytes: 0, savedBytes: 0, count: 0, operation: null, lastTabId: 0, lastSessionNumbers: { automatic: 0, manual: 0 }, historyRevision: 0 });
 
@@ -86,20 +88,30 @@ export class Repository {
 
   private db(): Promise<IDBPDatabase<BackupDatabase>>
   {
-    this.connection ??= openDB<BackupDatabase>(this.name, 3, {
+    this.connection ??= openDB<BackupDatabase>(this.name, 4, {
       upgrade(db, oldVersion, _newVersion, transaction)
       {
-        // replace disposable session data once while retaining existing preferences
         void (async () => {
-          const previous = oldVersion === 0 ? undefined : await transaction.objectStore('metadata').get('state');
-          for (const store of [...db.objectStoreNames]) db.deleteObjectStore(store);
-          db.createObjectStore('snapshots', { keyPath: 'id' });
-          db.createObjectStore('tabs', { keyPath: 'id' });
-          db.createObjectStore('summaries', { keyPath: 'id' }).createIndex('capturedAt', 'capturedAt');
-          db.createObjectStore('metadata');
-          const metadata = initialMetadata();
-          if (previous) { metadata.automatic = previous.automatic; metadata.settings = previous.settings; }
-          await transaction.objectStore('metadata').put(metadata, 'state');
+          if (oldVersion < 3) {
+            // replace disposable session data once while retaining existing preferences
+            const previous = oldVersion === 0 ? undefined : await transaction.objectStore('metadata').get('state');
+            for (const store of [...db.objectStoreNames]) db.deleteObjectStore(store);
+            db.createObjectStore('snapshots', { keyPath: 'id' }).createIndex('tabIds', 'tabIds', { multiEntry: true });
+            db.createObjectStore('tabs', { keyPath: 'id' }).createIndex('url', 'url');
+            db.createObjectStore('summaries', { keyPath: 'id' }).createIndex('capturedAt', 'capturedAt');
+            db.createObjectStore('metadata');
+            const metadata = initialMetadata();
+            if (previous) { metadata.automatic = previous.automatic; metadata.settings = previous.settings; }
+            await transaction.objectStore('metadata').put(metadata, 'state');
+            return;
+          }
+          // index existing sessions by tab record and tab records by URL without replacing them
+          transaction.objectStore('tabs').createIndex('url', 'url');
+          const snapshots = transaction.objectStore('snapshots');
+          snapshots.createIndex('tabIds', 'tabIds', { multiEntry: true });
+          for (let cursor = await snapshots.openCursor(); cursor; cursor = await cursor.continue()) {
+            await cursor.update({ ...cursor.value, tabIds: snapshotTabIds(cursor.value.windows) });
+          }
         })().catch(() => {
           try { transaction.abort(); } catch { /* failed requests may already have aborted the upgrade */ }
         });
@@ -144,12 +156,19 @@ export class Repository {
     return (await this.history(before, limit)).items;
   }
 
-  async history(before: HistoryCursor | null = null, limit = 50, collection?: Collection, query = '', sort: HistorySort = 'date-desc', range?: HistoryRange): Promise<{ items: Summary[]; count: number; bytes: number }>
+  async history(before: HistoryCursor | null = null, limit = 50, collection?: Collection, query = '', sort: HistorySort = 'date-desc', range?: HistoryRange, tabUrl?: string): Promise<{ items: Summary[]; count: number; bytes: number }>
   {
     const db = await this.db();
-    const transaction = db.transaction(['summaries', 'metadata']);
+    const transaction = db.transaction(['summaries', 'metadata', 'snapshots', 'tabs']);
     const summaries = await transaction.objectStore('summaries').index('capturedAt').getAll();
     const metadata = (await transaction.objectStore('metadata').get('state')) ?? initialMetadata();
+    let containing: Set<string> | undefined;
+    if (tabUrl !== undefined) {
+      // limit results to backups referencing any stored record of the page
+      const ids = await transaction.objectStore('tabs').index('url').getAllKeys(tabUrl);
+      const index = transaction.objectStore('snapshots').index('tabIds');
+      containing = new Set((await Promise.all(ids.map(id => index.getAllKeys(id)))).flat());
+    }
     const result: Summary[] = [];
     let count = 0;
     const bytes = collection === 'automatic' ? metadata.automaticBytes : collection === 'saved' ? metadata.savedBytes : metadata.bytes;
@@ -160,7 +179,7 @@ export class Repository {
       if (matches) count++;
       // filter the full collection before paging in the selected order
       if (matches && result.length < limit && (!range || (item.capturedAt >= range.start && item.capturedAt < range.end)) && (item.name ?? 'Unnamed session').toLocaleLowerCase().includes(search) &&
-          (!before || compareHistory(item, before, sort) > 0)) result.push(item);
+          (!containing || containing.has(item.id)) && (!before || compareHistory(item, before, sort) > 0)) result.push(item);
     }
     await transaction.done;
     return { items: result, count, bytes };
@@ -179,6 +198,45 @@ export class Repository {
       days.set(start, day);
     }
     return [...days.values()];
+  }
+
+  async searchTabs(query: string, limit = 100): Promise<{ items: TabMatch[]; truncated: boolean; tooBroad: boolean }>
+  {
+    const words = query.toLocaleLowerCase().split(/\s+/).filter(word => word.length > 0);
+    if (!words.length) return { items: [], truncated: false, tooBroad: false };
+    const transaction = (await this.db()).transaction(['tabs', 'snapshots', 'summaries']);
+    // match shared tab records instead of every reference in every snapshot
+    const tabs = (await transaction.objectStore('tabs').getAll()).filter((tab): tab is StoredTab & { url: string } => {
+      const text = `${tab.title}\n${tab.url ?? ''}`.toLocaleLowerCase();
+      return tab.url !== null && words.every(word => text.includes(word));
+    });
+    // skip backup lookups for queries that match too many records to summarize quickly
+    if (tabs.length > TAB_SEARCH_RECORD_LIMIT) {
+      await transaction.done;
+      return { items: [], truncated: false, tooBroad: true };
+    }
+    const summaries = new Map(tabs.length ? (await transaction.objectStore('summaries').getAll()).map(item => [item.id, item]) : []);
+    const index = transaction.objectStore('snapshots').index('tabIds');
+    const references = await Promise.all(tabs.map(async tab => ({ tab, ids: await index.getAllKeys(tab.id) })));
+    await transaction.done;
+    // combine title, pin, and group variants of each page and report its newest title
+    const pages = new Map<string, { match: TabMatch; saved: Map<string, boolean> }>();
+    for (const { tab, ids } of references) {
+      for (const id of ids) {
+        const summary = summaries.get(id);
+        if (!summary) throw new Error('This backup is no longer available. Refresh history.');
+        const collection: Collection = summary.savedAt === undefined ? 'automatic' : 'saved';
+        const page = pages.get(tab.url) ?? { match: { url: tab.url, title: tab.title, lastSeen: summary.capturedAt, lastSeenNumber: summary.number, lastSeenCollection: collection, automaticCount: 0, savedCount: 0 }, saved: new Map<string, boolean>() };
+        page.saved.set(id, summary.savedAt !== undefined);
+        if (summary.capturedAt > page.match.lastSeen) Object.assign(page.match, { title: tab.title, lastSeen: summary.capturedAt, lastSeenNumber: summary.number, lastSeenCollection: collection });
+        pages.set(tab.url, page);
+      }
+    }
+    const items = [...pages.values()].map(({ match, saved }) => {
+      const savedCount = [...saved.values()].filter(Boolean).length;
+      return { ...match, automaticCount: saved.size - savedCount, savedCount };
+    }).sort((a, b) => b.lastSeen - a.lastSeen || a.url.localeCompare(b.url));
+    return { items: items.slice(0, limit), truncated: items.length > limit, tooBroad: false };
   }
 
   async capture(session: Session, source: Source, now: number, name?: string | null): Promise<CaptureResult>

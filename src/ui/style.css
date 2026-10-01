@@ -130,6 +130,21 @@ details[open] > .backup-summary > svg, details[open] > .calendar-heading > svg {
 .tab-open:hover:not(:disabled) .tab-url { text-decoration: underline; }
 .tab-title, .tab-url { overflow-wrap: anywhere; line-height: 24px; }
 .tab-url { color: inherit; font-size: 12px; }
+.tab-search { margin-bottom: 24px; }
+.tab-search .tab-search-input { min-height: 32px; margin: 0; }
+.tab-search-results { margin-top: 8px; border: 1px solid var(--borderColor-default); border-radius: 6px; overflow: hidden; }
+.tab-search-results > .notice { margin: 0; border: 0; border-radius: 0; }
+.tab-search-list { list-style: none; padding: 0; margin: 0; }
+.tab-search-result { padding-inline: 16px; }
+.tab-search-result:first-child { border-top: 0; }
+.tab-search-seen { font-size: 12px; line-height: 24px; text-align: right; white-space: nowrap; }
+.tab-search-note { margin: 0; padding: 8px 16px; }
+.tab-search-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; padding: 6px 12px 6px 16px; border-top: 1px solid var(--borderColor-muted); }
+.tab-search-footer p { margin: 0; }
+.tab-search-more { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 3px 8px; border: 0; border-radius: 4px; background: transparent; color: var(--fgColor-muted); font-size: 12px; font-weight: 500; }
+.tab-search-more:hover:not(:disabled) { background: var(--bgColor-neutral-muted); color: var(--fgColor-default); }
+.tab-filter { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 12px; padding: 10px 16px; margin-bottom: 24px; border: 1px solid var(--borderColor-default); border-radius: 6px; background: var(--bgColor-muted); }
+.tab-filter p { min-width: 0; margin: 0; overflow-wrap: anywhere; }
 .group-label { border-radius: 4px; font-size: 12px; padding: 1px 6px; border: 1px solid var(--group-color, var(--borderColor-default)); max-width: 180px; overflow-wrap: anywhere; }
 .group-blue { --group-color: #388bfd; } .group-red { --group-color: #f85149; } .group-green { --group-color: #3fb950; } .group-yellow { --group-color: #d29922; } .group-purple { --group-color: #a371f7; } .group-pink { --group-color: #db61a2; } .group-cyan { --group-color: #39c5cf; } .group-orange { --group-color: #db6d28; }
 .unsupported { color: var(--fgColor-attention, #9a6700); }

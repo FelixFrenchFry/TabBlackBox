@@ -1,5 +1,5 @@
 import { timestamp } from '../../src/ui/dates';
-import { errorMessage, type Collection, type HistoryRange, type HistorySort, type Operation, type Overview, type Snapshot, type Summary } from '../../src/model';
+import { errorMessage, type Collection, type HistoryRange, type HistorySort, type Operation, type Overview, type Snapshot, type Summary, type TabMatch } from '../../src/model';
 import { compareHistory, parseHistorySort } from '../../src/history';
 import { parseArchive } from '../../src/archive';
 import { MB } from '../../src/storage';
@@ -12,6 +12,7 @@ import { createToast } from '../../src/ui/toast';
 import { createHelp } from '../../src/ui/help';
 import { createSettingsView } from '../../src/ui/settings';
 import { createBackupCalendar } from '../../src/ui/calendar';
+import { createTabSearch } from '../../src/ui/tab-search';
 import { HISTORY_INITIAL_LIMIT, HISTORY_PAGE_LIMIT, SESSION_NAME_LIMIT } from '../../src/protocol';
 
 const root = setup();
@@ -102,7 +103,7 @@ function historyPanel(collection: Collection)
   list.append(content);
   element.append(list, more);
   const items: Summary[] = [];
-  const filter: { loadedRange: HistoryRange | null } = { loadedRange: null };
+  const filter: { loadedRange: HistoryRange | null; loadedTabUrl: string | null } = { loadedRange: null, loadedTabUrl: null };
   return { element, list, content, header, toolbar, sortButtons, updateSort, sort, loadedSort: sort, rememberSort: false, count, usage, dateFeedback, rows, more, collection, query: '', items, ...filter, generation: 0, sessionRows: new Map<string, ReturnType<typeof row>>() };
 }
 
@@ -110,10 +111,18 @@ const savedPanel = historyPanel('saved');
 const automaticPanel = historyPanel('automatic');
 const panels = [savedPanel, automaticPanel];
 let historyRange: HistoryRange | null = null;
+let historyTabUrl: string | null = null;
 const calendar = createBackupCalendar(range => {
   historyRange = range;
   void Promise.all(panels.map(panel => loadHistory(panel, true))).catch(showError);
 });
+const tabSearch = createTabSearch({ label: tabLabel, show: filterByTab });
+const tabFilter = el('div', 'tab-filter');
+tabFilter.hidden = true;
+const tabFilterLabel = el('p');
+const clearTabFilter = button('Clear', icons.RotateCcw, 'button small');
+clearTabFilter.addEventListener('click', () => filterByTab(null));
+tabFilter.append(tabFilterLabel, clearTabFilter);
 const exportAll = button('Export all', icons.Download);
 const importSessions = button('Import', icons.Upload);
 const search = el('input', 'session-name-input archive-search');
@@ -125,7 +134,7 @@ savedPanel.toolbar.prepend(search);
 savedPanel.toolbar.append(backup.element, exportAll, importSessions);
 const footer = el('footer', 'history-footer');
 footer.append(icon(icons.HardDrive), el('span', '', 'Backups are stored on this device. Automatic backups are removed as needed. Manual backups stay until deleted explicitly. Export them to keep an external copy.'));
-main.append(heading, status, feedback, calendar.element, ...panels.map(panel => panel.element), footer);
+main.append(heading, status, feedback, calendar.element, tabSearch.element, tabFilter, ...panels.map(panel => panel.element), footer);
 const settings = createSettingsView(() => toast.show('Settings have been saved'));
 root.append(header, nav, main, settings.element, toast.element);
 
@@ -299,6 +308,54 @@ function favicon(url: string | null): HTMLElement
   return frame;
 }
 
+function filterByTab(match: TabMatch | null): void
+{
+  historyTabUrl = match?.url ?? null;
+  tabFilter.hidden = match === null;
+  if (match) {
+    tabFilterLabel.replaceChildren(document.createTextNode('Showing backups that contain '), el('strong', '', match.title || match.url));
+    tabFilter.scrollIntoView({ block: 'start' });
+  }
+  // reload both panels with the page filter while keeping name and date filters
+  void Promise.all(panels.map(panel => loadHistory(panel, true))).catch(showError);
+}
+
+function tabLabel(text: string, url: string | null): HTMLElement
+{
+  const label = el('div', 'tab-label');
+  const title = el('span', 'tab-title', text || url || 'Unavailable tab');
+  let open: HTMLAnchorElement | HTMLButtonElement;
+  // allow individual navigation for the same URL schemes supported by restoration
+  if (url !== null && fileUrl(url)) {
+    const file = button('', icons.ArrowUpRight, 'tab-open file-open');
+    file.disabled = !fileAccess;
+    file.title = 'Open local file in new tab';
+    file.addEventListener('click', () => {
+      void (async () => {
+        await updateFileAccess();
+        if (!fileAccess) throw new Error(FILE_ACCESS_MESSAGE);
+        await chrome.tabs.create({ url });
+      })().catch((error: unknown) => feedback.replaceChildren(notice(errorMessage(error))));
+    });
+    open = file;
+  } else if (restorableUrl(url)) {
+    open = el('a', 'tab-open');
+    open.href = url;
+    open.target = '_blank';
+    open.rel = 'noopener noreferrer';
+    open.title = 'Open in new tab';
+    open.append(icon(icons.ArrowUpRight));
+  } else {
+    open = button('', icons.ArrowUpRight, 'tab-open');
+    open.disabled = true;
+    open.title = url ? 'This URL cannot be opened from a saved session' : 'No saved URL is available';
+  }
+  open.setAttribute('aria-label', open.title);
+  open.append(el('span', 'tab-url', url ?? 'URL unavailable'));
+  label.append(favicon(url), title, open);
+  return label;
+}
+
 function preview(snapshot: Snapshot): HTMLElement
 {
   const content = el('div', 'snapshot-preview');
@@ -322,38 +379,7 @@ function preview(snapshot: Snapshot): HTMLElement
     const tabs = el('ul', 'tab-list');
     for (const tab of window.tabs) {
       const item = el('li', 'tab-row');
-      const label = el('div', 'tab-label');
-      const title = el('span', 'tab-title', tab.title || tab.url || 'Unavailable tab');
-      let open: HTMLAnchorElement | HTMLButtonElement;
-      // allow individual navigation for the same URL schemes supported by restoration
-      if (tab.url !== null && fileUrl(tab.url)) {
-        const url = tab.url;
-        const file = button('', icons.ArrowUpRight, 'tab-open file-open');
-        file.disabled = !fileAccess;
-        file.title = 'Open local file in new tab';
-        file.addEventListener('click', () => {
-          void (async () => {
-            await updateFileAccess();
-            if (!fileAccess) throw new Error(FILE_ACCESS_MESSAGE);
-            await chrome.tabs.create({ url });
-          })().catch((error: unknown) => feedback.replaceChildren(notice(errorMessage(error))));
-        });
-        open = file;
-      } else if (restorableUrl(tab.url)) {
-        open = el('a', 'tab-open');
-        open.href = tab.url;
-        open.target = '_blank';
-        open.rel = 'noopener noreferrer';
-        open.title = 'Open in new tab';
-        open.append(icon(icons.ArrowUpRight));
-      } else {
-        open = button('', icons.ArrowUpRight, 'tab-open');
-        open.disabled = true;
-        open.title = tab.url ? 'This URL cannot be opened from a saved session' : 'No saved URL is available';
-      }
-      open.setAttribute('aria-label', open.title);
-      open.append(el('span', 'tab-url', tab.url ?? 'URL unavailable'));
-      label.append(favicon(tab.url), title, open);
+      const label = tabLabel(tab.title, tab.url);
       item.append(label);
       if (tab.pinned) item.append(el('span', 'badge', 'Pinned'));
       if (tab.group !== null) {
@@ -637,8 +663,8 @@ function renderHistory(panel: ReturnType<typeof historyPanel>): void
   }
   if (!items.length) {
     const empty = el('div', 'empty-state');
-    const title = panel.loadedRange ? 'No matching backups on this date' : panel.query ? 'No matching saved sessions' : panel.collection === 'saved' ? 'Keep sessions for later' : 'Your backup history starts here';
-    const description = panel.loadedRange ? 'Choose another day or clear the date filter.' : panel.query ? 'Try another session name.' : panel.collection === 'saved' ? 'Choose Back up now or select Keep on an automatic backup below.' : 'Open some tabs and enable automatic backups in Settings. Changes will be saved according to your automatic backup settings.';
+    const title = panel.loadedTabUrl ? 'No backups contain this tab' : panel.loadedRange ? 'No matching backups on this date' : panel.query ? 'No matching saved sessions' : panel.collection === 'saved' ? 'Keep sessions for later' : 'Your backup history starts here';
+    const description = panel.loadedTabUrl ? 'Clear the tab filter to see all backups.' : panel.loadedRange ? 'Choose another day or clear the date filter.' : panel.query ? 'Try another session name.' : panel.collection === 'saved' ? 'Choose Back up now or select Keep on an automatic backup below.' : 'Open some tabs and enable automatic backups in Settings. Changes will be saved according to your automatic backup settings.';
     empty.append(icon(icons.Archive, 32), el('h2', '', title), el('p', 'muted', description));
     rows.append(empty);
   }
@@ -648,8 +674,9 @@ async function loadHistory(panel: ReturnType<typeof historyPanel>, reset: boolea
 {
   const { items, more, sessionRows, sort, query } = panel;
   const range = historyRange;
-  const rangeChanged = range?.start !== panel.loadedRange?.start || range?.end !== panel.loadedRange?.end;
-  const dateFilter = range ? { range } : {};
+  const tabUrl = historyTabUrl;
+  const rangeChanged = range?.start !== panel.loadedRange?.start || range?.end !== panel.loadedRange?.end || tabUrl !== panel.loadedTabUrl;
+  const dateFilter = { ...(range ? { range } : {}), ...(tabUrl === null ? {} : { tabUrl }) };
   const sortChanged = sort !== panel.loadedSort;
   const rememberSort = panel.rememberSort;
   const externalSort = sortChanged && !rememberSort;
@@ -686,6 +713,7 @@ async function loadHistory(panel: ReturnType<typeof historyPanel>, reset: boolea
     if (reset) panel.items = loaded;
     else panel.items.push(...loaded);
     panel.loadedRange = range;
+    panel.loadedTabUrl = tabUrl;
     panel.dateFeedback.hidden = true;
     renderHistory(panel);
     updateDialogButtons();
@@ -722,7 +750,7 @@ async function loadHistory(panel: ReturnType<typeof historyPanel>, reset: boolea
       throw error;
     }
   } finally {
-    if (generation === panel.generation) more.disabled = panel.sort !== panel.loadedSort || panel.loadedRange?.start !== historyRange?.start || panel.loadedRange?.end !== historyRange?.end;
+    if (generation === panel.generation) more.disabled = panel.sort !== panel.loadedSort || panel.loadedRange?.start !== historyRange?.start || panel.loadedRange?.end !== historyRange?.end || panel.loadedTabUrl !== historyTabUrl;
   }
 }
 
@@ -731,6 +759,8 @@ function resetHistoryFilters(): void
   search.value = savedPanel.query = '';
   historyRange = null;
   calendar.clear();
+  historyTabUrl = null;
+  tabFilter.hidden = true;
   // discard pending filtered results and reload both panels through the next overview
   historyInvalidated = true;
   for (const panel of panels) {
@@ -801,6 +831,8 @@ const refresh = createRefreshQueue(async kind =>
       historyCount = data.overview.metadata.count;
       historyRevision = data.overview.metadata.historyRevision;
       feedback.replaceChildren();
+      // keep visible tab search results in line with the reloaded history
+      void tabSearch.refresh();
     }
     if (kind === 'backup') {
       backup.finish(data.captureResult);

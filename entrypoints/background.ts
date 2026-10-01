@@ -77,7 +77,8 @@ export default defineBackground(() =>
         return { kind: 'overview', overview: await controller.overview(), captureResult };
       }
       case 'calendar': return { kind: 'calendar', days: await controller.repository.calendar(request.range) };
-      case 'history': return { kind: 'history', ...await controller.repository.history(request.before, request.before ? HISTORY_PAGE_LIMIT : HISTORY_INITIAL_LIMIT, request.collection, request.query, request.sort, request.range) };
+      case 'history': return { kind: 'history', ...await controller.repository.history(request.before, request.before ? HISTORY_PAGE_LIMIT : HISTORY_INITIAL_LIMIT, request.collection, request.query, request.sort, request.range, request.tabUrl) };
+      case 'tab-search': return { kind: 'tab-search', ...await controller.repository.searchTabs(request.query, request.limit) };
       case 'snapshot': return { kind: 'snapshot', snapshot: await controller.repository.get(request.id) };
       case 'rename': return { kind: 'renamed', summary: await controller.repository.rename(request.id, request.name) };
       case 'keep': return { kind: 'renamed', summary: await controller.repository.keep(request.id, request.name, Date.now()) };

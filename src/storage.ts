@@ -19,7 +19,8 @@ export function parseStorageSettings(value: unknown): StorageSettings
 
 export function storedBytes(record: StoredSnapshot | StoredTab): number
 {
-  return new TextEncoder().encode(JSON.stringify(record)).byteLength;
+  // exclude the derived tab index field like other database overhead
+  return new TextEncoder().encode(JSON.stringify('tabIds' in record ? { ...record, tabIds: undefined } : record)).byteLength;
 }
 
 export function storageTotals(snapshots: readonly StoredSnapshot[], tabs: ReadonlyMap<number, StoredTab>): Pick<Metadata, 'bytes' | 'automaticBytes' | 'savedBytes'>
