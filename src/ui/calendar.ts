@@ -24,10 +24,8 @@ export function createBackupCalendar(onSelect: (range: HistoryRange | null) => v
   spinner.classList.add('save-spinner');
   loading.append(spinner);
   periodLabel.append(period, createHelp('calendar-help', 'About the backup calendar', 'Browse backups by capture date. Darker colors indicate more backups, with details available when you hover over a day. Select a day to apply a filter to the backup lists.'), loading);
-  const previous = button('Earlier', icons.ArrowUp, 'button small calendar-previous');
-  const next = button('Later', icons.ArrowUp, 'button small calendar-next');
-  previous.setAttribute('aria-label', 'Previous month');
-  next.setAttribute('aria-label', 'Next month');
+  const previous = button('Prev', icons.ArrowUp, 'button small calendar-previous');
+  const next = button('Next', icons.ArrowUp, 'button small calendar-next');
   const message = el('div', 'calendar-message');
   message.setAttribute('role', 'status');
   const scroll = el('div', 'calendar-scroll');
@@ -233,7 +231,7 @@ export function createBackupCalendar(onSelect: (range: HistoryRange | null) => v
     if ((key === loadedKey && !pendingKey) || key === pendingKey) return;
     const current = ++generation;
     pendingKey = key;
-    previous.disabled = calendarRange(Date.now(), offset - 1, monthCount).start < 0;
+    previous.disabled = calendarRange(Date.now(), offset - monthCount, monthCount).start < 0;
     next.disabled = offset === 0;
     if (displayedRange !== `${range.start}:${range.end}`) closeTooltip();
     message.replaceChildren();
@@ -283,8 +281,9 @@ export function createBackupCalendar(onSelect: (range: HistoryRange | null) => v
     if (metadata) void update(metadata);
   });
   resize.observe(content);
-  previous.addEventListener('click', () => { offset--; if (metadata) void update(metadata); });
-  next.addEventListener('click', () => { offset = Math.min(0, offset + 1); if (metadata) void update(metadata); });
+  // page by the fitted month count and stop at the current month
+  previous.addEventListener('click', () => { offset -= monthCount; if (metadata) void update(metadata); });
+  next.addEventListener('click', () => { offset = Math.min(0, offset + monthCount); if (metadata) void update(metadata); });
   // let the caller reset other filters before reloading history
   return { element, update, clear: () => select(null, false) };
 }
