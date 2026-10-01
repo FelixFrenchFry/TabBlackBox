@@ -12,7 +12,7 @@ export const TAB_SEARCH_PAGE_LIMIT = 10;
 export const TAB_URL_LIMIT = 2_097_152;
 export { SESSION_NAME_LIMIT } from './archive';
 
-export type Request = { kind: 'automatic-settings'; update: AutomaticUpdate } | { kind: 'overview' | 'refresh' | 'backup' } | { kind: 'calendar'; range: HistoryRange } | { kind: 'history'; before: HistoryCursor | null; collection?: Collection; query?: string; sort?: HistorySort; range?: HistoryRange; tabUrl?: string } | { kind: 'tab-search'; query: string; limit: number } | { kind: 'snapshot' | 'restore' | 'delete-saved'; id: string } | { kind: 'rename' | 'keep'; id: string; name: string | null } | { kind: 'export'; id?: string } | { kind: 'import'; archive: Archive } | { kind: 'restore-window'; id: string; windowIndex: number } | { kind: 'storage-settings'; settings: StorageSettings; confirmedRemovalCount: number };
+export type Request = { kind: 'automatic-settings'; update: AutomaticUpdate } | { kind: 'overview' | 'refresh' | 'backup' } | { kind: 'calendar'; range: HistoryRange } | { kind: 'history'; before: HistoryCursor | null; collection?: Collection; query?: string; sort?: HistorySort; range?: HistoryRange; tabUrl?: string } | { kind: 'tab-search'; query: string; limit: number } | { kind: 'snapshot' | 'restore' | 'delete-session'; id: string } | { kind: 'rename' | 'keep'; id: string; name: string | null } | { kind: 'export'; id?: string } | { kind: 'import'; archive: Archive } | { kind: 'restore-window'; id: string; windowIndex: number } | { kind: 'storage-settings'; settings: StorageSettings; confirmedRemovalCount: number };
 export type Data = { kind: 'overview'; overview: Overview; captureResult?: CaptureResult } | { kind: 'calendar'; days: BackupDay[] } | { kind: 'history'; items: Summary[]; count: number; bytes: number } | { kind: 'tab-search'; items: TabMatch[]; truncated: boolean; tooBroad: boolean } | { kind: 'snapshot'; snapshot: Snapshot } | { kind: 'renamed'; summary: Summary } | { kind: 'export'; archive: Archive } | { kind: 'accepted' } | { kind: 'storage-settings'; result: StorageSettingsResult };
 export type Reply = { ok: true; data: Data } | { ok: false; error: string };
 
@@ -53,7 +53,7 @@ export function parseRequest(input: unknown): Request
         return { kind: 'history', before: { capturedAt: before.capturedAt, number: before.number, id: before.id }, ...filter };
       }
     }
-    if ((input.kind === 'snapshot' || input.kind === 'restore' || input.kind === 'delete-saved') && 'id' in input && typeof input.id === 'string' && input.id.length > 0 && input.id.length <= 100) return { kind: input.kind, id: input.id };
+    if ((input.kind === 'snapshot' || input.kind === 'restore' || input.kind === 'delete-session') && 'id' in input && typeof input.id === 'string' && input.id.length > 0 && input.id.length <= 100) return { kind: input.kind, id: input.id };
     if (input.kind === 'restore-window' && 'id' in input && typeof input.id === 'string' && input.id.length > 0 && input.id.length <= 100 &&
         'windowIndex' in input && typeof input.windowIndex === 'number' && Number.isSafeInteger(input.windowIndex) && input.windowIndex >= 0) return { kind: input.kind, id: input.id, windowIndex: input.windowIndex };
   }

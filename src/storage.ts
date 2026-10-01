@@ -59,6 +59,11 @@ function automaticHistory<T extends RetentionRecord>(records: readonly T[], late
   return records.filter(item => item.savedAt === undefined).sort((a, b) => Number(b.id === latestId) - Number(a.id === latestId) || b.capturedAt - a.capturedAt || b.id.localeCompare(a.id));
 }
 
+export function newestAutomaticId(records: readonly RetentionRecord[], latestId: string | null): string | null
+{
+  return automaticHistory(records, latestId)[0]?.id ?? null;
+}
+
 export function retentionRemovals(records: readonly RetentionRecord[], latestId: string | null, settings: StorageSettings, now: number): string[]
 {
   // saved sessions and the newest automatic backup are protected

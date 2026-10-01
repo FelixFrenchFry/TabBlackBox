@@ -5,7 +5,7 @@ import { compareHistory } from './history';
 import { dayRange } from './calendar';
 import type { Archive } from './archive';
 import { canonicalSession, canonicalTab, decodeSnapshot, encodeSnapshot, snapshotTabIds, summarize } from './session';
-import { DEFAULT_STORAGE_SETTINGS, MB, retentionPlan, retentionRemovals, storageTotals, storedBytes } from './storage';
+import { DEFAULT_STORAGE_SETTINGS, MB, newestAutomaticId, retentionPlan, retentionRemovals, storageTotals, storedBytes } from './storage';
 
 interface BackupDatabase extends DBSchema {
   snapshots: { key: string; value: StoredSnapshot; indexes: { tabIds: number } };
@@ -367,17 +367,19 @@ export class Repository {
     }
   }
 
-  async deleteSaved(id: string): Promise<boolean>
+  async deleteSession(id: string): Promise<boolean>
   {
-    // delete only explicitly saved sessions and repair the capture pointer atomically
+    // delete one saved session or automatic backup and repair the capture pointer atomically
     const tx = (await this.db()).transaction(['snapshots', 'tabs', 'summaries', 'metadata'], 'readwrite');
     try {
       const snapshot = await tx.objectStore('snapshots').get(id);
-      if (!snapshot || snapshot.savedAt === undefined) throw new Error('This saved session is no longer available. Refresh history.');
+      if (!snapshot) throw new Error('This backup is no longer available. Refresh history.');
       const metadata = (await tx.objectStore('metadata').get('state')) ?? initialMetadata();
-      if (metadata.operation?.kind === 'running') throw new Error('Wait for restoration to finish before deleting saved sessions.');
+      if (metadata.operation?.kind === 'running') throw new Error('Wait for restoration to finish before deleting backups.');
       const deletedLatest = metadata.latestId === id;
       const state = await readStorage(tx);
+      // keep the newest automatic backup as the recovery boundary like retention does
+      if (snapshot.savedAt === undefined && newestAutomaticId(state.snapshots, metadata.latestId) === id) throw new Error('The newest automatic backup cannot be deleted.');
       state.snapshots = state.snapshots.filter(snapshot => snapshot.id !== id);
       await tx.objectStore('snapshots').delete(id);
       await tx.objectStore('summaries').delete(id);
@@ -405,7 +407,8 @@ export class Repository {
   {
     const tx = (await this.db()).transaction(['snapshots', 'tabs']);
     const snapshots = id === undefined ? await tx.objectStore('snapshots').getAll() : [await tx.objectStore('snapshots').get(id)];
-    const saved = snapshots.filter((snapshot): snapshot is StoredSnapshot => snapshot !== undefined && snapshot.savedAt !== undefined);
+    // export any single session by ID but only saved sessions in a complete export
+    const saved = snapshots.filter((snapshot): snapshot is StoredSnapshot => snapshot !== undefined && (id !== undefined || snapshot.savedAt !== undefined));
     const tabs = await readTabs(saved, id => tx.objectStore('tabs').get(id));
     const sessions = saved.map(snapshot => decodeSnapshot(snapshot, tabs))
       .map(({ windows, name, capturedAt, source }) => ({ windows, name, capturedAt, source }));

@@ -13,6 +13,7 @@ import { createHelp } from '../../src/ui/help';
 import { createSettingsView } from '../../src/ui/settings';
 import { createBackupCalendar } from '../../src/ui/calendar';
 import { createTabSearch } from '../../src/ui/tab-search';
+import { setTooltip } from '../../src/ui/tooltip';
 import { HISTORY_INITIAL_LIMIT, HISTORY_PAGE_LIMIT, SESSION_NAME_LIMIT } from '../../src/protocol';
 
 const root = setup();
@@ -57,8 +58,8 @@ function historyPanel(collection: Collection)
   const header = el('div', 'list-header');
   const count = el('span', 'badge', '0');
   const usage = el('span', 'muted panel-usage');
-  const help = createHelp(`${collection}-help`, `About ${title.toLowerCase()}`, collection === 'saved' ? 'Sessions you choose to keep until you delete them. Select "Back up now" to save your current session, or select "Keep session" to move an automatic backup into this category. Manual backups are excluded from storage limits and automatic deletions. You can export sessions to keep a copy outside your browser, or import previously exported sessions.' : 'History of your tabs, windows, and tab groups. These sessions are saved periodically according to your automatic backup settings. Older backups are deleted automatically according to your storage limit settings.');
-  header.append(icon(collection === 'saved' ? icons.Archive : icons.History), el('h2', '', title), help, count);
+  const help = createHelp(`${collection}-help`, `About ${title.toLowerCase()}`, collection === 'saved' ? 'Sessions you choose to keep until you delete them. Select "Back up now" to save your current session, or select the bookmark icon next to an automatic backup\'s name to move it into this category. Manual backups are excluded from storage limits and automatic deletions. You can export sessions to keep a copy outside your browser, or import previously exported sessions.' : 'History of your tabs, windows, and tab groups. These sessions are saved periodically according to your automatic backup settings. Older backups are deleted automatically according to your storage limit settings.');
+  header.append(icon(collection === 'saved' ? icons.Bookmark : icons.History), el('h2', '', title), help, count);
   const toolbar = el('div', 'archive-toolbar');
   const sortControls = el('div', 'history-sort-controls');
   sortControls.setAttribute('role', 'group');
@@ -95,7 +96,7 @@ function historyPanel(collection: Collection)
   const dateFeedback = el('div', 'history-date-feedback');
   dateFeedback.hidden = true;
   dateFeedback.setAttribute('aria-live', 'polite');
-  const more = button('Load more backups', icons.ChevronDown, 'button load-more');
+  const more = button('Load more', icons.ChevronDown, 'button load-more');
   more.hidden = true;
   list.append(header);
   if (collection === 'saved') list.append(toolbar);
@@ -170,6 +171,7 @@ function historySortFeedback(panel: ReturnType<typeof historyPanel>): HTMLElemen
 }
 
 let latestId: string | null = null;
+let newestId: string | null = null;
 let historyCount: number | null = null;
 let historyRevision: number | null = null;
 let historyInvalidated = false;
@@ -368,7 +370,9 @@ function preview(snapshot: Snapshot): HTMLElement
     const section = el('section', 'window-preview');
     const heading = el('h3', 'window-heading');
     heading.append(icon(icons.Monitor), document.createTextNode(`Window ${index + 1}`), el('span', 'muted', plural(window.tabs.length, 'tab')));
-    const restore = button(`Restore window ${index + 1}`, icons.RotateCcw, 'button small window-restore');
+    const restore = button('Restore this', icons.RotateCcw, 'button small window-restore');
+    restore.setAttribute('aria-label', `Restore this window ${index + 1}`);
+    setTooltip(restore, 'Restore only this window and its tabs');
     restore.disabled = sessionDialogLock.active || !canRestore({ tabCount: window.tabs.length, backingUp, restoring });
     restoreButtons.set(restore, window.tabs.length);
     restore.addEventListener('click', () => {
@@ -417,23 +421,24 @@ function nameSession(item: Summary, trigger: HTMLButtonElement, action: 'rename'
   input.placeholder = 'Unnamed session';
   const heading = el('div', 'dialog-heading');
   heading.append(title);
-  input.setAttribute('aria-describedby', 'session-name-description');
-  form.append(label, input);
+  // keep the naming dialog compact with icon actions beside the input
+  const field = el('div', 'session-name-row');
+  const cancel = button('', icons.X, 'button icon-button');
+  cancel.setAttribute('aria-label', 'Cancel');
+  setTooltip(cancel, 'Close without saving');
+  const save = button('', icons.Check, 'button primary icon-button');
+  save.setAttribute('aria-label', action === 'rename' ? 'Save name' : 'Keep');
+  setTooltip(save, action === 'rename' ? 'Save the new name' : 'Keep as a manual backup');
+  save.type = 'submit';
+  field.append(input, cancel, save);
+  form.append(label, field);
   if (action === 'keep') {
+    input.setAttribute('aria-describedby', 'session-name-description');
     heading.append(createHelp('session-name-description', 'About keeping this session', 'Turn this automatic backup into a manual backup, so it remains saved until you delete it. Give it a name, or leave it blank to use ‘Unnamed session’.', events.signal));
-  } else {
-    const help = el('p', 'muted', 'Leave blank to use “Unnamed session”.');
-    help.id = 'session-name-description';
-    form.append(help);
   }
   const feedback = el('div');
   feedback.setAttribute('aria-live', 'polite');
-  const actions = el('div', 'dialog-actions');
-  const cancel = button('Cancel', icons.Check);
-  const save = button(action === 'rename' ? 'Save name' : 'Keep', icons.Check, 'button primary');
-  save.type = 'submit';
-  actions.append(cancel, save);
-  form.append(feedback, actions);
+  form.append(feedback);
   dialog.append(action === 'keep' ? heading : title, form);
   let saving = false;
   cancel.addEventListener('click', () => dialog.close());
@@ -507,7 +512,8 @@ function deleteSession(item: Summary, trigger: HTMLButtonElement): void
 {
   if (restoring || backingUp || !sessionDialogLock.acquire()) return;
   const dialog = el('dialog', 'restore-dialog');
-  const title = el('h2', '', 'Delete saved session?');
+  const saved = item.savedAt !== undefined;
+  const title = el('h2', '', saved ? 'Delete saved session?' : 'Delete automatic backup?');
   title.id = 'delete-session-title';
   dialog.setAttribute('aria-labelledby', title.id);
   dialog.append(title, el('p', '', `“${item.name ?? 'Unnamed session'}” will be permanently deleted. Export a copy first if you want to keep it.`));
@@ -534,10 +540,10 @@ function deleteSession(item: Summary, trigger: HTMLButtonElement): void
     remove.disabled = cancel.disabled = true;
     void (async () => {
       try {
-        await request({ kind: 'delete-saved', id: item.id });
+        await request({ kind: 'delete-session', id: item.id });
         await refresh('overview');
         dialog.close();
-        toast.show('Saved session deleted');
+        toast.show(saved ? 'Saved session deleted' : 'Automatic backup deleted');
       } catch (error) { feedback.replaceChildren(notice(errorMessage(error))); }
       finally { deleting = false; remove.disabled = cancel.disabled = false; }
     })();
@@ -575,37 +581,40 @@ function row(item: Summary)
     if (title.textContent !== name) title.textContent = name;
     const sessionNumber = `#${item.number}`;
     if (number.textContent !== sessionNumber) number.textContent = sessionNumber;
-    rename.title = `Rename session ${sessionNumber}`;
-    rename.setAttribute('aria-label', rename.title);
+    rename.setAttribute('aria-label', `Rename session ${sessionNumber}`);
   }
   nameRow.append(title);
   label.append(nameRow, counts);
   summary.append(icon(icons.ChevronDown), number, label, date);
   details.append(summary);
-  const restore = button('Restore', icons.RotateCcw, 'button small');
+  // show session actions as icons with short accessible names and descriptive shared tooltips
+  const restore = button('', icons.RotateCcw, 'button small');
+  restore.setAttribute('aria-label', 'Restore');
+  setTooltip(restore, 'Restore session in new windows');
   restore.disabled = sessionDialogLock.active || !canRestore({ tabCount: item.tabCount, backingUp, restoring });
   restoreButtons.set(restore, item.tabCount);
   const actions = el('div', 'backup-actions');
   const rename = button('', icons.Pencil, 'session-rename');
   rename.disabled = sessionDialogLock.active;
+  setTooltip(rename, 'Rename this session');
   update(item);
   rename.addEventListener('click', event => { event.preventDefault(); nameSession(item, rename, 'rename'); });
-  nameRow.append(rename);
-  const keep = button('', icons.Archive, 'button small');
-  keep.title = 'Keep session';
-  keep.setAttribute('aria-label', keep.title);
-  keep.addEventListener('click', () => nameSession(item, keep, 'keep'));
+  // offer keeping next to renaming because both open the naming dialog
+  const keep = button('', icons.Bookmark, 'session-keep');
+  keep.setAttribute('aria-label', 'Keep session');
+  setTooltip(keep, 'Keep as a manual backup');
+  keep.hidden = item.savedAt !== undefined;
+  keep.addEventListener('click', event => { event.preventDefault(); nameSession(item, keep, 'keep'); });
+  nameRow.append(rename, keep);
   const exportSession = button('', icons.Download, 'button small');
-  exportSession.title = 'Export session';
-  exportSession.setAttribute('aria-label', exportSession.title);
+  exportSession.setAttribute('aria-label', 'Export session');
+  setTooltip(exportSession, 'Export session to a file');
   exportSession.addEventListener('click', () => { void downloadArchive(item.id).catch(showError); });
   const remove = button('', icons.Trash2, 'button small');
-  remove.title = 'Delete session';
-  remove.setAttribute('aria-label', remove.title);
+  remove.setAttribute('aria-label', 'Delete session');
+  setTooltip(remove, item.savedAt === undefined ? 'Delete this automatic backup' : 'Delete this saved session');
   remove.addEventListener('click', () => deleteSession(item, remove));
-  keep.hidden = item.savedAt !== undefined;
-  exportSession.hidden = remove.hidden = item.savedAt === undefined;
-  actions.append(keep, exportSession, remove, restore);
+  actions.append(exportSession, remove, restore);
   wrapper.append(details, actions);
   let snapshot: Snapshot | undefined;
   async function load(): Promise<Snapshot>
@@ -664,7 +673,7 @@ function renderHistory(panel: ReturnType<typeof historyPanel>): void
   if (!items.length) {
     const empty = el('div', 'empty-state');
     const title = panel.loadedTabUrl ? 'No backups contain this tab' : panel.loadedRange ? 'No matching backups on this date' : panel.query ? 'No matching saved sessions' : panel.collection === 'saved' ? 'Keep sessions for later' : 'Your backup history starts here';
-    const description = panel.loadedTabUrl ? 'Clear the tab filter to see all backups.' : panel.loadedRange ? 'Choose another day or clear the date filter.' : panel.query ? 'Try another session name.' : panel.collection === 'saved' ? 'Choose Back up now or select Keep on an automatic backup below.' : 'Open some tabs and enable automatic backups in Settings. Changes will be saved according to your automatic backup settings.';
+    const description = panel.loadedTabUrl ? 'Clear the tab filter to see all backups.' : panel.loadedRange ? 'Choose another day or clear the date filter.' : panel.query ? 'Try another session name.' : panel.collection === 'saved' ? 'Choose Back up now or select the bookmark icon on an automatic backup below.' : 'Open some tabs and enable automatic backups in Settings. Changes will be saved according to your automatic backup settings.';
     empty.append(icon(icons.Archive, 32), el('h2', '', title), el('p', 'muted', description));
     rows.append(empty);
   }
@@ -796,14 +805,17 @@ function updateSave(): void
 function updateDialogButtons(): void
 {
   for (const [button, tabCount] of restoreButtons) button.disabled = sessionDialogLock.active || !canRestore({ tabCount, backingUp, restoring });
-  for (const panel of panels) for (const saved of panel.sessionRows.values()) {
+  for (const panel of panels) for (const [id, saved] of panel.sessionRows) {
     saved.rename.disabled = sessionDialogLock.active;
     saved.keep.disabled = saved.remove.disabled = sessionDialogLock.active || backingUp || restoring;
+    // hide deletion for the protected newest automatic backup
+    saved.remove.hidden = panel.collection === 'automatic' && id === newestId;
   }
 }
 
 function applyOverview(overview: Overview): void
 {
+  newestId = overview.automaticStorage.newestId;
   settings.update(overview);
   statusCard.update(overview);
   restoring = overview.status.kind === 'restoring';

@@ -82,8 +82,8 @@ export default defineBackground(() =>
       case 'snapshot': return { kind: 'snapshot', snapshot: await controller.repository.get(request.id) };
       case 'rename': return { kind: 'renamed', summary: await controller.repository.rename(request.id, request.name) };
       case 'keep': return { kind: 'renamed', summary: await controller.repository.keep(request.id, request.name, Date.now()) };
-      case 'delete-saved':
-        await controller.deleteSaved(request.id);
+      case 'delete-session':
+        await controller.deleteSession(request.id);
         return { kind: 'accepted' };
       case 'export': return { kind: 'export', archive: await controller.repository.exportSaved(request.id) };
       case 'import':

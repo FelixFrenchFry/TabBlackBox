@@ -141,7 +141,7 @@ function initializeDateTooltip(): () => void
     if (event.pointerType === 'mouse' && node) show(node);
   });
   document.addEventListener('pointerout', event => { if (target && findTime(event.target) === target) leave(); });
-  document.addEventListener('focusin', event => { const node = findTime(event.target); if (node) show(node); });
+  document.addEventListener('focusin', event => { const node = findTime(event.target); if (node?.matches(':focus-visible')) show(node); });
   document.addEventListener('focusout', event => { if (target && findTime(event.target) === target) leave(); });
   document.addEventListener('keydown', event => { if (event.key === 'Escape') close(); });
   document.addEventListener('visibilitychange', close);

@@ -225,8 +225,9 @@ export class Controller {
     catch { /* saved backups remain readable when recovery needs a write */ }
     const metadata = await this.repository.metadata();
     const latest = metadata.latestId ? await this.repository.summary(metadata.latestId) : null;
-    const { bytes, count } = await this.repository.history(null, 0, 'automatic');
-    return { status: this.status, metadata, latest, automaticStorage: { bytes, count } };
+    // report the newest automatic backup so pages can hide its protected deletion
+    const { items: [newest], bytes, count } = await this.repository.history(null, 1, 'automatic');
+    return { status: this.status, metadata, latest, automaticStorage: { bytes, count, newestId: newest?.id ?? null } };
   }
 
   async setStorageSettings(settings: StorageSettings, confirmedRemovalCount: number): Promise<StorageSettingsResult>
@@ -266,12 +267,12 @@ export class Controller {
     });
   }
 
-  async deleteSaved(id: string): Promise<void>
+  async deleteSession(id: string): Promise<void>
   {
     await this.start(true);
-    if (this.restoration.kind !== 'idle') throw new Error('Wait for restoration to finish before deleting saved sessions.');
+    if (this.restoration.kind !== 'idle') throw new Error('Wait for restoration to finish before deleting backups.');
     await this.enqueue(async () => {
-      if (!await this.repository.deleteSaved(id)) return;
+      if (!await this.repository.deleteSession(id)) return;
       // recheck coverage after deleting the latest backup while honoring automatic settings
       this.stopTimers();
       if (this.status.kind !== 'error') this.status = { kind: 'pending' };

@@ -1,11 +1,12 @@
-import { createElement, Archive, ArrowDown, ArrowUp, ArrowUpDown, ArrowUpRight, Check, ChevronDown, CircleAlert, CircleQuestionMark, Clock3, Download, FileText, Globe, HardDrive, History, LoaderCircle, LockKeyhole, Monitor, Palette, Pencil, Pin, RotateCcw, Save, Settings, ShieldCheck, Trash2, Upload, type IconNode } from 'lucide';
+import { createElement, Archive, ArrowDown, ArrowUp, ArrowUpDown, ArrowUpRight, Bookmark, Check, ChevronDown, CircleAlert, CircleQuestionMark, Clock3, Download, FileText, Globe, HardDrive, History, LoaderCircle, LockKeyhole, Monitor, Palette, Pencil, Pin, RotateCcw, Save, Settings, ShieldCheck, Trash2, Upload, X, type IconNode } from 'lucide';
 import type { Data, Reply, Request } from '../protocol';
 import type { Overview } from '../model';
 import { initializeAppearance } from './appearance';
 import { initializeDates, setTimestamp, timestamp } from './dates';
+import { initializeTooltips } from './tooltip';
 import './style.css';
 
-export const icons = { Archive, ArrowDown, ArrowUp, ArrowUpDown, ArrowUpRight, Check, ChevronDown, CircleAlert, CircleQuestionMark, Clock3, Download, FileText, Globe, HardDrive, History, LoaderCircle, LockKeyhole, Monitor, Palette, Pencil, Pin, RotateCcw, Save, Settings, ShieldCheck, Trash2, Upload };
+export const icons = { Archive, ArrowDown, ArrowUp, ArrowUpDown, ArrowUpRight, Bookmark, Check, ChevronDown, CircleAlert, CircleQuestionMark, Clock3, Download, FileText, Globe, HardDrive, History, LoaderCircle, LockKeyhole, Monitor, Palette, Pencil, Pin, RotateCcw, Save, Settings, ShieldCheck, Trash2, Upload, X };
 
 export function icon(node: IconNode, size = 16): SVGElement
 {
@@ -40,6 +41,7 @@ export function setup(): HTMLElement
 {
   initializeAppearance();
   initializeDates();
+  initializeTooltips();
   const root = document.getElementById('app');
   if (!root) throw new Error('Application root is missing.');
   return root;
