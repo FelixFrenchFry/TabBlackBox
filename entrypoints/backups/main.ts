@@ -17,6 +17,7 @@ import { createTabChart } from '../../src/ui/tab-chart';
 import { createSearchFields } from '../../src/ui/search-fields';
 import { createTabSearch } from '../../src/ui/tab-search';
 import { createTagEditor } from '../../src/ui/tag-editor';
+import { favicon } from '../../src/ui/favicon';
 import { setTooltip } from '../../src/ui/tooltip';
 import { HISTORY_INITIAL_LIMIT, HISTORY_PAGE_LIMIT, SESSION_NAME_LIMIT } from '../../src/protocol';
 
@@ -306,29 +307,6 @@ async function confirmRestore(load: () => Snapshot | Promise<Snapshot>, trigger:
       updateDialogButtons();
     }
   }
-}
-
-function favicon(url: string | null): HTMLElement
-{
-  const frame = el('span', 'tab-favicon');
-  frame.setAttribute('aria-hidden', 'true');
-  const fallback = icon(fileUrl(url) ? icons.FileText : icons.Globe);
-  if (restorableUrl(url) && url !== 'about:blank') {
-    // retrieve website icons through Chrome using the saved page URL
-    const source = new URL(chrome.runtime.getURL('/_favicon/'));
-    source.searchParams.set('pageUrl', url);
-    source.searchParams.set('size', '32');
-    const image = el('img');
-    image.alt = '';
-    image.width = 16;
-    image.height = 16;
-    image.loading = 'lazy';
-    image.decoding = 'async';
-    image.addEventListener('error', () => frame.replaceChildren(fallback), { once: true });
-    image.src = source.href;
-    frame.append(image);
-  } else frame.append(fallback);
-  return frame;
 }
 
 function filterByTab(match: TabMatch | null): void
@@ -654,7 +632,7 @@ function row(item: Summary)
   summary.append(icon(icons.ChevronDown), number, label, date);
   details.append(summary);
   // show session actions as icons with short accessible names and descriptive shared tooltips
-  const restore = button('', icons.RotateCcw, 'button small');
+  const restore = button('', icons.RotateCcw, 'button small icon-button');
   restore.setAttribute('aria-label', 'Restore');
   setTooltip(restore, 'Restore session in new windows');
   restore.disabled = sessionDialogLock.active || !canRestore({ tabCount: item.tabCount, backingUp, restoring });
@@ -672,11 +650,11 @@ function row(item: Summary)
   keep.hidden = item.savedAt !== undefined;
   keep.addEventListener('click', event => { event.preventDefault(); nameSession(item, keep, 'keep'); });
   nameRow.append(rename, keep, tags);
-  const exportSession = button('', icons.Download, 'button small');
+  const exportSession = button('', icons.Download, 'button small icon-button');
   exportSession.setAttribute('aria-label', 'Export session');
   setTooltip(exportSession, 'Export session to a file');
   exportSession.addEventListener('click', () => { void downloadArchive(item.id).catch(showExportError); });
-  const remove = button('', icons.Trash2, 'button small');
+  const remove = button('', icons.Trash2, 'button small icon-button');
   remove.setAttribute('aria-label', 'Delete session');
   setTooltip(remove, item.savedAt === undefined ? 'Delete this automatic backup' : 'Delete this saved session');
   remove.addEventListener('click', () => deleteSession(item, remove));
