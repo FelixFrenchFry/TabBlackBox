@@ -11,6 +11,7 @@ import { createBackupButton } from '../../src/ui/backup-button';
 import { createToast } from '../../src/ui/toast';
 import { createHelp } from '../../src/ui/help';
 import { createSettingsView } from '../../src/ui/settings';
+import { createStatisticsView } from '../../src/ui/statistics';
 import { createBackupCalendar } from '../../src/ui/calendar';
 import { createTabChart } from '../../src/ui/tab-chart';
 import { createSearchFields } from '../../src/ui/search-fields';
@@ -30,10 +31,13 @@ const active = el('a', 'nav-item active', 'Backup history');
 active.href = '#history';
 active.setAttribute('aria-current', 'page');
 active.prepend(icon(icons.History));
+const statisticsLink = el('a', 'nav-item', 'Statistics');
+statisticsLink.href = '#statistics';
+statisticsLink.prepend(icon(icons.ChartLine));
 const settingsLink = el('a', 'nav-item', 'Settings');
 settingsLink.href = '#settings';
 settingsLink.prepend(icon(icons.Settings));
-nav.append(active, settingsLink);
+nav.append(active, statisticsLink, settingsLink);
 const main = el('main', 'history-main');
 const heading = el('div', 'page-heading');
 const titles = el('div', 'page-titles');
@@ -124,6 +128,7 @@ const calendar = createBackupCalendar(range => {
   void Promise.all(panels.map(panel => loadHistory(panel, true))).catch(showError);
 });
 const tabChart = createTabChart();
+const statistics = createStatisticsView(tabChart.element);
 const tabSearch = createTabSearch({ label: tabLabel, show: filterByTab });
 titleRow.append(tabSearch.element);
 const tabFilter = el('div', 'tab-filter');
@@ -149,21 +154,23 @@ savedPanel.toolbar.prepend(searchGroup);
 savedPanel.toolbar.append(backup.element, exportAll, importSessions);
 const footer = el('footer', 'history-footer');
 footer.append(icon(icons.HardDrive), el('span', '', 'Backups are stored on this device. Automatic backups are removed as needed. Manual backups stay until deleted explicitly. Export them to keep an external copy.'));
-main.append(heading, status, feedback, calendar.element, tabChart.element, tabFilter, ...panels.map(panel => panel.element), footer);
+main.append(heading, status, feedback, calendar.element, tabFilter, ...panels.map(panel => panel.element), footer);
 const settings = createSettingsView(() => toast.show('Settings have been saved'));
-root.append(header, nav, main, settings.element, toast.element);
+root.append(header, nav, main, statistics.element, settings.element, toast.element);
 
 function showView(): void
 {
-  const isSettings = location.hash === '#settings';
-  main.hidden = isSettings;
-  settings.element.hidden = !isSettings;
-  for (const [link, selected] of [[active, !isSettings], [settingsLink, isSettings]] as const) {
-    link.classList.toggle('active', selected);
-    if (selected) link.setAttribute('aria-current', 'page');
-    else link.removeAttribute('aria-current');
+  // show one view per hash and fall back to backup history
+  const views = [{ link: active, element: main, title: 'Backup history' }, { link: statisticsLink, element: statistics.element, title: 'Statistics' }, { link: settingsLink, element: settings.element, title: 'Settings' }];
+  const current = views.find(view => view.link.hash === location.hash) ?? views[0];
+  for (const view of views) {
+    const selected = view === current;
+    view.element.hidden = !selected;
+    view.link.classList.toggle('active', selected);
+    if (selected) view.link.setAttribute('aria-current', 'page');
+    else view.link.removeAttribute('aria-current');
   }
-  document.title = `TabBlackBox · ${isSettings ? 'Settings' : 'Backup history'}`;
+  document.title = `TabBlackBox · ${current?.title ?? 'Backup history'}`;
 }
 window.addEventListener('hashchange', showView);
 showView();
@@ -879,6 +886,7 @@ function applyOverview(overview: Overview): void
 {
   newestId = overview.automaticStorage.newestId;
   settings.update(overview);
+  statistics.update(overview);
   statusCard.update(overview);
   restoring = overview.status.kind === 'restoring';
   updateSave();

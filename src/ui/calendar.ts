@@ -9,7 +9,9 @@ export function createBackupCalendar(onSelect: (range: HistoryRange | null) => v
   const element = el('section', 'backup-calendar');
   element.setAttribute('aria-label', 'Backup calendar');
   const details = el('details', 'calendar-details');
-  details.open = true;
+  // restore whether the calendar was collapsed
+  try { details.open = localStorage.getItem('tabblackbox.calendar-open') !== 'false'; }
+  catch { details.open = true; }
   const heading = el('summary', 'calendar-heading', 'Backup calendar');
   heading.prepend(icon(icons.ChevronDown));
   const content = el('div', 'calendar-content');
@@ -123,7 +125,11 @@ export function createBackupCalendar(onSelect: (range: HistoryRange | null) => v
   window.addEventListener('resize', closeTooltip);
   window.addEventListener('scroll', closeTooltip, { capture: true });
   window.addEventListener('hashchange', closeTooltip);
-  details.addEventListener('toggle', () => { if (!details.open) closeTooltip(); });
+  details.addEventListener('toggle', () => {
+    if (!details.open) closeTooltip();
+    try { localStorage.setItem('tabblackbox.calendar-open', String(details.open)); }
+    catch { /* the calendar still opens and closes for this page */ }
+  });
 
   function select(range: HistoryRange | null, notify = true): void
   {

@@ -23,16 +23,16 @@ function readTabChartPeriod(): TabChartPeriod
 export function createTabChart()
 {
   const element = el('section', 'tab-chart');
-  element.setAttribute('aria-label', 'Tab count chart');
+  element.setAttribute('aria-label', 'Active tab count chart');
   const details = el('details');
   details.open = true;
-  const heading = el('summary', 'calendar-heading', 'Tab count');
+  const heading = el('summary', 'calendar-heading', 'Active tab count');
   heading.prepend(icon(icons.ChevronDown));
   const content = el('div', 'calendar-content');
   const toolbar = el('div', 'calendar-toolbar');
   const title = el('div', 'tab-chart-title');
   const period = el('span');
-  title.append(period, createHelp('tab-chart-help', 'About the tab count chart', 'Number of tabs in your automatic backups over the selected period. Manual backups are shown as dots. Hover over the chart for details.'));
+  title.append(period, createHelp('tab-chart-help', 'About the active tab count chart', 'Number of tabs in your automatic backups over the selected period. Manual backups are shown as dots. Hover over the chart for details.'));
   const legend = el('div', 'tab-chart-legend muted');
   legend.append(el('span', 'tab-chart-key automatic', 'Automatic'), el('span', 'tab-chart-key manual', 'Manual'));
   const periods = el('div', 'tab-chart-periods');
