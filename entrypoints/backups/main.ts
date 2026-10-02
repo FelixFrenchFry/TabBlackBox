@@ -249,7 +249,7 @@ async function confirmRestore(load: () => Snapshot | Promise<Snapshot>, trigger:
     if (tabs.length > supported + blockedFiles) dialog.append(el('p', 'muted', `${plural(tabs.length - supported - blockedFiles, 'unsupported tab')} will be skipped. Their saved URLs remain in the preview.`));
     dialog.append(el('p', 'muted', windowIndex === undefined ? 'Restoring a session again creates another copy of its tabs.' : 'Restoring a window again creates another copy of its tabs.'));
     const actions = el('div', 'dialog-actions');
-    const cancel = button('Cancel', icons.Check);
+    const cancel = button('Cancel', icons.X);
     const confirm = button(windowIndex === undefined ? 'Restore session' : `Restore window ${windowIndex + 1}`, icons.RotateCcw, 'button primary');
     confirm.disabled = supported === 0;
     actions.append(cancel, confirm);
@@ -423,24 +423,20 @@ function nameSession(item: Summary, trigger: HTMLButtonElement, action: 'rename'
   input.placeholder = 'Unnamed session';
   const heading = el('div', 'dialog-heading');
   heading.append(title);
-  // keep the naming dialog compact with icon actions beside the input
-  const field = el('div', 'session-name-row');
-  const cancel = button('', icons.X, 'button icon-button');
-  cancel.setAttribute('aria-label', 'Cancel');
-  setTooltip(cancel, 'Close without saving');
-  const save = button('', icons.Check, 'button primary icon-button');
-  save.setAttribute('aria-label', action === 'rename' ? 'Save name' : 'Keep');
-  setTooltip(save, action === 'rename' ? 'Save the new name' : 'Keep as a manual backup');
+  // place naming actions in the shared dialog action row
+  const actions = el('div', 'dialog-actions');
+  const cancel = button('Cancel', icons.X);
+  const save = button(action === 'rename' ? 'Save name' : 'Keep session', action === 'rename' ? icons.Pencil : icons.Bookmark, 'button primary');
   save.type = 'submit';
-  field.append(input, cancel, save);
-  form.append(label, field);
+  actions.append(cancel, save);
+  form.append(label, input);
   if (action === 'keep') {
     input.setAttribute('aria-describedby', 'session-name-description');
     heading.append(createHelp('session-name-description', 'About keeping this session', 'Turn this automatic backup into a manual backup, so it remains saved until you delete it. Give it a name, or leave it blank to use ‘Unnamed session’.', events.signal));
   }
   const feedback = el('div');
   feedback.setAttribute('aria-live', 'polite');
-  form.append(feedback);
+  form.append(feedback, actions);
   dialog.append(action === 'keep' ? heading : title, form);
   let saving = false;
   cancel.addEventListener('click', () => dialog.close());
@@ -526,8 +522,8 @@ function deleteSession(item: Summary, trigger: HTMLButtonElement): void
   dialog.setAttribute('aria-labelledby', title.id);
   dialog.append(title, el('p', '', `“${item.name ?? 'Unnamed session'}” will be permanently deleted. Export a copy first if you want to keep it.`));
   const actions = el('div', 'dialog-actions');
-  const cancel = button('Cancel', icons.Check);
-  const remove = button('Delete session', icons.Trash2, 'button');
+  const cancel = button('Cancel', icons.X);
+  const remove = button('Delete session', icons.Trash2, 'button danger');
   const feedback = el('div');
   feedback.setAttribute('aria-live', 'polite');
   actions.append(cancel, remove);

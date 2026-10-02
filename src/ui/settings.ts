@@ -53,8 +53,8 @@ function confirmCleanup(count: number): Promise<boolean>
     dialog.setAttribute('aria-labelledby', title.id);
     dialog.append(title, el('p', '', `Applying these limits will delete ${plural(count, 'older backup')}. This cannot be undone. Your saved sessions and newest recovery backup will be kept.`));
     const actions = el('div', 'dialog-actions');
-    const cancel = button('Cancel', icons.Check);
-    const confirm = button('Apply limits', icons.HardDrive, 'button primary');
+    const cancel = button('Cancel', icons.X);
+    const confirm = button('Apply limits', icons.HardDrive, 'button danger');
     actions.append(cancel, confirm);
     dialog.append(actions);
     cancel.addEventListener('click', () => dialog.close());

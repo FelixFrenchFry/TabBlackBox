@@ -25,6 +25,8 @@ p { margin-top: 6px; }
 .button:hover:not(:disabled) { background: var(--button-default-bgColor-hover, var(--bgColor-neutral-muted)); }
 .button.primary { background: var(--button-primary-bgColor-rest, #1f883d); color: var(--button-primary-fgColor-rest, #fff); border-color: var(--button-primary-borderColor-rest, #1f232826); }
 .button.primary:hover:not(:disabled) { background: var(--button-primary-bgColor-hover, #1a7f37); }
+.button.danger { background: var(--button-danger-bgColor-hover, #cf222e); color: var(--button-danger-fgColor-hover, #fff); border-color: var(--button-danger-borderColor-hover, #1f232826); }
+.button.danger:hover:not(:disabled) { background: var(--button-danger-bgColor-active, #a40e26); }
 .button.small { min-height: 28px; font-size: 12px; padding: 3px 10px; }
 .badge { display: inline-flex; align-items: center; border: 1px solid var(--borderColor-default); border-radius: 20px; padding: 0 7px; font-size: 12px; font-weight: 500; color: var(--fgColor-muted); white-space: nowrap; }
 .app-header { background: var(--bgColor-muted); border-bottom: 1px solid var(--borderColor-muted); }
@@ -131,8 +133,6 @@ details[open] > .backup-summary > svg, details[open] > .calendar-heading > svg {
 .backup-date { min-width: 0; justify-self: end; font-size: inherit; font-weight: 600; text-align: right; overflow-wrap: anywhere; }
 .session-name-input { display: block; width: 100%; padding: 6px 10px; margin-top: 6px; border: 1px solid var(--borderColor-default); border-radius: 6px; color: var(--fgColor-default); background: var(--bgColor-muted); }
 .restore-dialog > form { margin-top: 12px; }
-.session-name-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
-.session-name-row .session-name-input { flex: 1; min-width: 0; margin-top: 0; }
 .dialog-heading { display: flex; align-items: center; gap: 8px; }
 .backup-label > .muted { font-size: 12px; }
 .snapshot-preview { border-top: 1px solid var(--borderColor-muted); padding: 6px 16px 13px 44px; }
