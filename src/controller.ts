@@ -293,8 +293,12 @@ export class Controller {
       {
         let snapshot: Snapshot;
         let fileAccess = false;
+        let unloadAbove: number | null = null;
         try {
           snapshot = await this.repository.get(id);
+          // apply the restore settings in effect when this restoration starts
+          const { restore } = await this.repository.metadata();
+          if (restore.unloadBackgroundTabs) unloadAbove = restore.unloadThreshold;
           const windows = selectWindows(snapshot, windowIndex);
           const hasFiles = windows.some(window => window.tabs.some(tab => fileUrl(tab.url)));
           // check permission before opening browser windows for local files
@@ -312,7 +316,7 @@ export class Controller {
         this.status = { kind: 'restoring' };
         resolve();
         try {
-          await restoreSession(snapshot, this.port, operation => this.repository.setOperation(operation), fileAccess, windowIndex);
+          await restoreSession(snapshot, this.port, operation => this.repository.setOperation(operation), fileAccess, windowIndex, unloadAbove);
         } catch (error) {
           try {
             await this.repository.recoverOperation();

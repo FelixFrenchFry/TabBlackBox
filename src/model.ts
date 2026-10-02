@@ -35,9 +35,11 @@ export type AutomaticUpdate =
   | { kind: 'frequency'; value: AutomaticSettings['intervalMinutes'] }
   | { kind: 'pause'; minutes: 15 | 60 | 1440 }
   | { kind: 'resume' };
+export type RestoreSettings = { unloadBackgroundTabs: boolean; unloadThreshold: number };
 export type Metadata = {
   automatic: AutomaticSettings;
   settings: StorageSettings;
+  restore: RestoreSettings;
   latestId: string | null; lastSavedAt: number | null; lastCheckedAt: number | null;
   bytes: number; automaticBytes: number; savedBytes: number; count: number; operation: Operation | null;
   lastTabId: number;

@@ -306,7 +306,7 @@ input.limit-switch[type="checkbox"]:checked::before { top: 7px; left: 12px; righ
 .appearance-date-row { border-top: 1px solid var(--borderColor-muted); margin-top: 12px; padding-top: 12px; }
 
 
-.automatic-setting-row:first-child { border-top: 0; padding-top: 0; }
+.automatic-setting-row:first-child, .restore-setting-row:first-child { border-top: 0; padding-top: 0; }
 .automatic-setting-row .settings-select { width: 235px; }
 .automatic-pause-controls { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .automatic-pause-controls .settings-select { width: 125px; }

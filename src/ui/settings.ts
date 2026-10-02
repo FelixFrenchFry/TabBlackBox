@@ -1,4 +1,5 @@
 import { automaticSettings } from './automatic-settings';
+import { restoreSettings } from './restore-settings';
 import { readDateFormat, setDateFormat } from './dates';
 import { errorMessage, type Overview, type StorageSettings } from '../model';
 import { DEFAULT_STORAGE_SETTINGS, MB, parseStorageSettings } from '../storage';
@@ -301,9 +302,12 @@ export function createSettingsView(onSaved: () => void)
   const backupStatus = createStatusView();
   const automaticControls = automaticSettings(overview => view.update(overview), onSaved);
   automaticBody.append(automaticControls.element, backupStatus.element);
+  const { element: restore, body: restoreBody } = settingsPanel('Restoring sessions', icons.RotateCcw);
+  const restoreControls = restoreSettings(overview => view.update(overview), onSaved);
+  restoreBody.append(restoreControls.element);
   const feedback = el('div');
   feedback.setAttribute('aria-live', 'polite');
-  element.append(heading, feedback, automatic, storage, appearance);
+  element.append(heading, feedback, automatic, storage, restore, appearance);
   const view = {
     element,
     update(overview: Overview): void
@@ -325,6 +329,7 @@ export function createSettingsView(onSaved: () => void)
         updateControls();
       }
       automaticControls.update(overview);
+      restoreControls.update(overview);
       backupStatus.update(overview);
     },
     showError(message: string): void { feedback.replaceChildren(notice(message)); },

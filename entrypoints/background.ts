@@ -65,6 +65,9 @@ export default defineBackground(() =>
         return { kind: 'overview', overview: await controller.overview() };
       case 'overview': return { kind: 'overview', overview: await controller.overview() };
       case 'storage-settings': return { kind: 'storage-settings', result: await controller.setStorageSettings(request.settings, request.confirmedRemovalCount) };
+      case 'restore-settings':
+        await controller.repository.setRestoreSettings(request.settings);
+        return { kind: 'overview', overview: await controller.overview() };
       case 'refresh':
       case 'backup': {
         let captureResult: CaptureResult | undefined;

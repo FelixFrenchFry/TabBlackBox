@@ -2,6 +2,8 @@ import { FILE_ACCESS_MESSAGE, fileUrl, normalizeSession } from './session';
 import type { Session } from './model';
 import type { RestorePort } from './restore';
 
+const UNLOAD_TIMEOUT_MS = 10_000;
+
 export async function scanBrowser(): Promise<Session>
 {
   const windows = await chrome.windows.getAll({ populate: true, windowTypes: ['normal'] });
@@ -27,6 +29,30 @@ export const restoreBrowser: RestorePort = {
     return tab.id;
   },
   async pinTab(tabId) { await chrome.tabs.update(tabId, { pinned: true }); },
+  async unloadTab(tabId)
+  {
+    // let the page finish loading so the unloaded tab keeps its title and icon
+    await new Promise<void>(resolve =>
+    {
+      const finish = () => {
+        clearTimeout(timer);
+        chrome.tabs.onUpdated.removeListener(updated);
+        chrome.tabs.onRemoved.removeListener(removed);
+        resolve();
+      };
+      const updated = (id: number, change: { status?: string }) => { if (id === tabId && change.status === 'complete') finish(); };
+      const removed = (id: number) => { if (id === tabId) finish(); };
+      // unloading proceeds after the timeout when a page never finishes loading
+      const timer = setTimeout(finish, UNLOAD_TIMEOUT_MS);
+      chrome.tabs.onUpdated.addListener(updated);
+      chrome.tabs.onRemoved.addListener(removed);
+      // cover pages that finished loading before the listener was added
+      chrome.tabs.get(tabId).then(tab => { if (tab.status === 'complete') finish(); }, finish);
+    });
+    // discarding can give the tab a new id
+    const discarded = await chrome.tabs.discard(tabId);
+    return discarded?.id ?? tabId;
+  },
   async groupTabs(windowId, tabIds, group)
   {
     const first = tabIds[0];

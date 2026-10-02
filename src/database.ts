@@ -1,6 +1,7 @@
 import { applyAutomaticUpdate, DEFAULT_AUTOMATIC_SETTINGS } from './automatic';
 import { openDB, type DBSchema, type IDBPDatabase, type IDBPTransaction } from 'idb';
-import type { AutomaticUpdate, BackupDay, CaptureResult, Collection, HistoryCursor, HistoryRange, HistorySort, Metadata, Operation, SearchField, Session, SessionDetails, Snapshot, Source, StorageSettings, StorageSettingsResult, StoredSnapshot, StoredTab, Summary, TabCountPoint, TabMatch, TabSearchField } from './model';
+import type { AutomaticUpdate, BackupDay, CaptureResult, Collection, HistoryCursor, HistoryRange, HistorySort, Metadata, Operation, RestoreSettings, SearchField, Session, SessionDetails, Snapshot, Source, StorageSettings, StorageSettingsResult, StoredSnapshot, StoredTab, Summary, TabCountPoint, TabMatch, TabSearchField } from './model';
+import { DEFAULT_RESTORE_SETTINGS } from './restore-settings';
 import { compareHistory, SEARCH_FIELDS, TAB_SEARCH_FIELDS } from './history';
 import { dayRange } from './calendar';
 import { thinTabCounts } from './chart';
@@ -17,7 +18,7 @@ interface BackupDatabase extends DBSchema {
 
 const TAB_SEARCH_RECORD_LIMIT = 500;
 
-const initialMetadata = (): Metadata => ({ automatic: { ...DEFAULT_AUTOMATIC_SETTINGS }, settings: { ...DEFAULT_STORAGE_SETTINGS }, latestId: null, lastSavedAt: null, lastCheckedAt: null, bytes: 0, automaticBytes: 0, savedBytes: 0, count: 0, operation: null, lastTabId: 0, lastSessionNumbers: { automatic: 0, manual: 0 }, historyRevision: 0 });
+const initialMetadata = (): Metadata => ({ automatic: { ...DEFAULT_AUTOMATIC_SETTINGS }, settings: { ...DEFAULT_STORAGE_SETTINGS }, restore: { ...DEFAULT_RESTORE_SETTINGS }, latestId: null, lastSavedAt: null, lastCheckedAt: null, bytes: 0, automaticBytes: 0, savedBytes: 0, count: 0, operation: null, lastTabId: 0, lastSessionNumbers: { automatic: 0, manual: 0 }, historyRevision: 0 });
 
 function matchesSearch(item: Summary, search: string, fields: readonly SearchField[]): boolean
 {
@@ -142,7 +143,9 @@ export class Repository {
 
   async metadata(): Promise<Metadata>
   {
-    return (await (await this.db()).get('metadata', 'state')) ?? initialMetadata();
+    const stored = await (await this.db()).get('metadata', 'state');
+    // records saved before restore settings existed receive the defaults
+    return stored ? { ...stored, restore: stored.restore ?? { ...DEFAULT_RESTORE_SETTINGS } } : initialMetadata();
   }
 
   async get(id: string): Promise<Snapshot>
@@ -489,6 +492,22 @@ export class Repository {
     try {
       const metadata = (await tx.store.get('state')) ?? initialMetadata();
       metadata.automatic = applyAutomaticUpdate(metadata.automatic, update, now);
+      await tx.store.put(metadata, 'state');
+      await tx.done;
+    } catch (error) {
+      try { tx.abort(); } catch { /* transaction may already be aborted */ }
+      await tx.done.catch(() => undefined);
+      throw error;
+    }
+  }
+
+  async setRestoreSettings(settings: RestoreSettings): Promise<void>
+  {
+    // replace one preference within the metadata transaction so other pages cannot overwrite it
+    const tx = (await this.db()).transaction('metadata', 'readwrite');
+    try {
+      const metadata = (await tx.store.get('state')) ?? initialMetadata();
+      metadata.restore = settings;
       await tx.store.put(metadata, 'state');
       await tx.done;
     } catch (error) {

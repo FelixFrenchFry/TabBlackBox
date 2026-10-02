@@ -1,8 +1,9 @@
 import { parseAutomaticUpdate } from './automatic';
-import type { AutomaticUpdate, BackupDay, CaptureResult, Collection, HistoryCursor, HistoryRange, HistorySort, Overview, SearchField, SessionDetails, Snapshot, StorageSettings, StorageSettingsResult, Summary, TabCountPoint, TabMatch, TabSearchField } from './model';
+import type { AutomaticUpdate, BackupDay, CaptureResult, Collection, HistoryCursor, HistoryRange, HistorySort, Overview, RestoreSettings, SearchField, SessionDetails, Snapshot, StorageSettings, StorageSettingsResult, Summary, TabCountPoint, TabMatch, TabSearchField } from './model';
 import { parseHistorySort, parseSearchFields, parseTabSearchFields } from './history';
 import { parseHistoryRange } from './calendar';
 import { parseStorageSettings } from './storage';
+import { parseRestoreSettings } from './restore-settings';
 import { parseArchive, parseSessionDetails, parseSessionName, parseSessionTags, SESSION_NAME_LIMIT, type Archive } from './archive';
 
 export const HISTORY_INITIAL_LIMIT = 10;
@@ -12,7 +13,7 @@ export const TAB_SEARCH_PAGE_LIMIT = 10;
 export const TAB_URL_LIMIT = 2_097_152;
 export { SESSION_NAME_LIMIT } from './archive';
 
-export type Request = { kind: 'automatic-settings'; update: AutomaticUpdate } | { kind: 'overview' | 'refresh' | 'backup' } | { kind: 'calendar' | 'tab-counts'; range: HistoryRange } | { kind: 'history'; before: HistoryCursor | null; collection?: Collection; query?: string; sort?: HistorySort; range?: HistoryRange; tabUrl?: string; fields?: SearchField[]; tag?: string } | { kind: 'tab-search'; query: string; limit: number; fields?: TabSearchField[] } | { kind: 'snapshot' | 'restore' | 'delete-session'; id: string } | { kind: 'rename' | 'keep'; id: string; name: string | null; details?: SessionDetails } | { kind: 'export'; id?: string } | { kind: 'import'; archive: Archive } | { kind: 'restore-window'; id: string; windowIndex: number } | { kind: 'storage-settings'; settings: StorageSettings; confirmedRemovalCount: number };
+export type Request = { kind: 'automatic-settings'; update: AutomaticUpdate } | { kind: 'overview' | 'refresh' | 'backup' } | { kind: 'calendar' | 'tab-counts'; range: HistoryRange } | { kind: 'history'; before: HistoryCursor | null; collection?: Collection; query?: string; sort?: HistorySort; range?: HistoryRange; tabUrl?: string; fields?: SearchField[]; tag?: string } | { kind: 'tab-search'; query: string; limit: number; fields?: TabSearchField[] } | { kind: 'snapshot' | 'restore' | 'delete-session'; id: string } | { kind: 'rename' | 'keep'; id: string; name: string | null; details?: SessionDetails } | { kind: 'export'; id?: string } | { kind: 'import'; archive: Archive } | { kind: 'restore-window'; id: string; windowIndex: number } | { kind: 'storage-settings'; settings: StorageSettings; confirmedRemovalCount: number } | { kind: 'restore-settings'; settings: RestoreSettings };
 export type Data = { kind: 'overview'; overview: Overview; captureResult?: CaptureResult } | { kind: 'calendar'; days: BackupDay[] } | { kind: 'tab-counts'; points: TabCountPoint[]; before: TabCountPoint | null } | { kind: 'history'; items: Summary[]; count: number; bytes: number } | { kind: 'tab-search'; items: TabMatch[]; truncated: boolean; tooBroad: boolean } | { kind: 'snapshot'; snapshot: Snapshot } | { kind: 'renamed'; summary: Summary } | { kind: 'export'; archive: Archive } | { kind: 'accepted' } | { kind: 'storage-settings'; result: StorageSettingsResult };
 export type Reply = { ok: true; data: Data } | { ok: false; error: string };
 
@@ -31,6 +32,7 @@ export function parseRequest(input: unknown): Request
     if (input.kind === 'storage-settings' && 'settings' in input && 'confirmedRemovalCount' in input && typeof input.confirmedRemovalCount === 'number' && Number.isSafeInteger(input.confirmedRemovalCount) && input.confirmedRemovalCount >= 0) {
       return { kind: 'storage-settings', settings: parseStorageSettings(input.settings), confirmedRemovalCount: input.confirmedRemovalCount };
     }
+    if (input.kind === 'restore-settings' && 'settings' in input) return { kind: 'restore-settings', settings: parseRestoreSettings(input.settings) };
     if (input.kind === 'overview' || input.kind === 'refresh' || input.kind === 'backup') return { kind: input.kind };
     if ((input.kind === 'calendar' || input.kind === 'tab-counts') && 'range' in input) return { kind: input.kind, range: parseHistoryRange(input.range) };
     if (input.kind === 'tab-search' && 'query' in input && typeof input.query === 'string' && input.query.length <= TAB_URL_LIMIT &&
