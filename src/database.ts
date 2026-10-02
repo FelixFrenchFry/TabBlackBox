@@ -1,10 +1,10 @@
 import { applyAutomaticUpdate, DEFAULT_AUTOMATIC_SETTINGS } from './automatic';
 import { openDB, type DBSchema, type IDBPDatabase, type IDBPTransaction } from 'idb';
-import type { AutomaticUpdate, BackupDay, CaptureResult, Collection, HistoryCursor, HistoryRange, HistorySort, Metadata, Operation, Session, Snapshot, Source, StorageSettings, StorageSettingsResult, StoredSnapshot, StoredTab, Summary, TabCountPoint, TabMatch } from './model';
-import { compareHistory } from './history';
+import type { AutomaticUpdate, BackupDay, CaptureResult, Collection, HistoryCursor, HistoryRange, HistorySort, Metadata, Operation, SearchField, Session, SessionDetails, Snapshot, Source, StorageSettings, StorageSettingsResult, StoredSnapshot, StoredTab, Summary, TabCountPoint, TabMatch, TabSearchField } from './model';
+import { compareHistory, SEARCH_FIELDS, TAB_SEARCH_FIELDS } from './history';
 import { dayRange } from './calendar';
 import { thinTabCounts } from './chart';
-import type { Archive } from './archive';
+import { sessionDetails, type Archive } from './archive';
 import { canonicalSession, canonicalTab, decodeSnapshot, encodeSnapshot, snapshotTabIds, summarize } from './session';
 import { DEFAULT_STORAGE_SETTINGS, MB, newestAutomaticId, retentionPlan, retentionRemovals, storageTotals, storedBytes } from './storage';
 
@@ -18,6 +18,14 @@ interface BackupDatabase extends DBSchema {
 const TAB_SEARCH_RECORD_LIMIT = 500;
 
 const initialMetadata = (): Metadata => ({ automatic: { ...DEFAULT_AUTOMATIC_SETTINGS }, settings: { ...DEFAULT_STORAGE_SETTINGS }, latestId: null, lastSavedAt: null, lastCheckedAt: null, bytes: 0, automaticBytes: 0, savedBytes: 0, count: 0, operation: null, lastTabId: 0, lastSessionNumbers: { automatic: 0, manual: 0 }, historyRevision: 0 });
+
+function matchesSearch(item: Summary, search: string, fields: readonly SearchField[]): boolean
+{
+  if (!search) return true;
+  // search only the selected parts of each session
+  const texts = [...(fields.includes('name') ? [item.name ?? 'Unnamed session'] : []), ...(fields.includes('tags') ? item.tags ?? [] : [])];
+  return texts.some(text => text.toLocaleLowerCase().includes(search));
+}
 
 type WriteTransaction = IDBPTransaction<BackupDatabase, ('snapshots' | 'tabs' | 'summaries' | 'metadata')[], 'readwrite'>;
 type StorageState = { snapshots: StoredSnapshot[]; tabs: Map<number, StoredTab>; tabIds: Map<string, number> };
@@ -89,7 +97,7 @@ export class Repository {
 
   private db(): Promise<IDBPDatabase<BackupDatabase>>
   {
-    this.connection ??= openDB<BackupDatabase>(this.name, 4, {
+    this.connection ??= openDB<BackupDatabase>(this.name, 5, {
       upgrade(db, oldVersion, _newVersion, transaction)
       {
         void (async () => {
@@ -106,10 +114,12 @@ export class Repository {
             await transaction.objectStore('metadata').put(metadata, 'state');
             return;
           }
-          // index existing sessions by tab record and tab records by URL without replacing them
-          transaction.objectStore('tabs').createIndex('url', 'url');
+          // add missing indexes to existing sessions and tab records without replacing them
+          const tabs = transaction.objectStore('tabs');
+          if (!tabs.indexNames.contains('url')) tabs.createIndex('url', 'url');
           const snapshots = transaction.objectStore('snapshots');
-          snapshots.createIndex('tabIds', 'tabIds', { multiEntry: true });
+          if (!snapshots.indexNames.contains('tabIds')) snapshots.createIndex('tabIds', 'tabIds', { multiEntry: true });
+          // rebuild tab references so partially indexed databases become consistent
           for (let cursor = await snapshots.openCursor(); cursor; cursor = await cursor.continue()) {
             await cursor.update({ ...cursor.value, tabIds: snapshotTabIds(cursor.value.windows) });
           }
@@ -157,7 +167,7 @@ export class Repository {
     return (await this.history(before, limit)).items;
   }
 
-  async history(before: HistoryCursor | null = null, limit = 50, collection?: Collection, query = '', sort: HistorySort = 'date-desc', range?: HistoryRange, tabUrl?: string): Promise<{ items: Summary[]; count: number; bytes: number }>
+  async history(before: HistoryCursor | null = null, limit = 50, collection?: Collection, query = '', sort: HistorySort = 'date-desc', range?: HistoryRange, tabUrl?: string, fields: readonly SearchField[] = SEARCH_FIELDS, tag?: string): Promise<{ items: Summary[]; count: number; bytes: number }>
   {
     const db = await this.db();
     const transaction = db.transaction(['summaries', 'metadata', 'snapshots', 'tabs']);
@@ -179,7 +189,7 @@ export class Repository {
       const matches = collection === undefined || (item.savedAt !== undefined) === (collection === 'saved');
       if (matches) count++;
       // filter the full collection before paging in the selected order
-      if (matches && result.length < limit && (!range || (item.capturedAt >= range.start && item.capturedAt < range.end)) && (item.name ?? 'Unnamed session').toLocaleLowerCase().includes(search) &&
+      if (matches && result.length < limit && (!range || (item.capturedAt >= range.start && item.capturedAt < range.end)) && matchesSearch(item, search, fields) && (!tag || item.tags?.includes(tag)) &&
           (!containing || containing.has(item.id)) && (!before || compareHistory(item, before, sort) > 0)) result.push(item);
     }
     await transaction.done;
@@ -222,14 +232,14 @@ export class Repository {
     };
   }
 
-  async searchTabs(query: string, limit = 100): Promise<{ items: TabMatch[]; truncated: boolean; tooBroad: boolean }>
+  async searchTabs(query: string, limit = 100, fields: readonly TabSearchField[] = TAB_SEARCH_FIELDS): Promise<{ items: TabMatch[]; truncated: boolean; tooBroad: boolean }>
   {
     const words = query.toLocaleLowerCase().split(/\s+/).filter(word => word.length > 0);
     if (!words.length) return { items: [], truncated: false, tooBroad: false };
     const transaction = (await this.db()).transaction(['tabs', 'snapshots', 'summaries']);
-    // match shared tab records instead of every reference in every snapshot
+    // match the selected parts of shared tab records instead of every reference in every snapshot
     const tabs = (await transaction.objectStore('tabs').getAll()).filter((tab): tab is StoredTab & { url: string } => {
-      const text = `${tab.title}\n${tab.url ?? ''}`.toLocaleLowerCase();
+      const text = `${fields.includes('title') ? tab.title : ''}\n${fields.includes('url') ? tab.url ?? '' : ''}`.toLocaleLowerCase();
       return tab.url !== null && words.every(word => text.includes(word));
     });
     // skip backup lookups for queries that match too many records to summarize quickly
@@ -343,17 +353,17 @@ export class Repository {
     }
   }
 
-  async rename(id: string, name: string | null): Promise<Summary>
+  async rename(id: string, name: string | null, details?: SessionDetails): Promise<Summary>
   {
-    return this.updateSession(id, name);
+    return this.updateSession(id, name, details);
   }
 
-  async keep(id: string, name: string | null, now: number): Promise<Summary>
+  async keep(id: string, name: string | null, now: number, details?: SessionDetails): Promise<Summary>
   {
-    return this.updateSession(id, name, now);
+    return this.updateSession(id, name, details, now);
   }
 
-  private async updateSession(id: string, name: string | null, savedAt?: number): Promise<Summary>
+  private async updateSession(id: string, name: string | null, details?: SessionDetails, savedAt?: number): Promise<Summary>
   {
     // update labels and byte accounting together without capturing or applying retention
     const tx = (await this.db()).transaction(['snapshots', 'tabs', 'summaries', 'metadata'], 'readwrite');
@@ -369,12 +379,18 @@ export class Repository {
         snapshot.number = nextSessionNumber(metadata, 'manual');
         snapshot.savedAt = savedAt;
       }
+      // replace tags only when supplied and keep them exclusive to manual backups
+      if (details) {
+        if (snapshot.savedAt === undefined && details.tags.length) throw new Error('Tags are only available for manual backups.');
+        delete snapshot.tags;
+        Object.assign(snapshot, sessionDetails(details));
+      }
       const summary = summarize(decodeSnapshot(snapshot, state.tabs), storedBytes(snapshot));
       updateStorage(metadata, state);
       if (snapshot.savedAt === undefined && summary.bytes > previous.bytes) {
         if (metadata.automaticBytes > (this.budget ?? metadata.settings.maxStorageMB * MB)) throw new Error('There is not enough backup storage for this session. Shorten the name or increase the storage limit.');
       }
-      if (previous.name !== name || previous.savedAt !== snapshot.savedAt) {
+      if (previous.name !== name || previous.savedAt !== snapshot.savedAt || JSON.stringify(previous.tags) !== JSON.stringify(summary.tags)) {
         await tx.objectStore('snapshots').put(snapshot);
         await tx.objectStore('summaries').put(summary);
         metadata.historyRevision++;
@@ -433,7 +449,7 @@ export class Repository {
     const saved = snapshots.filter((snapshot): snapshot is StoredSnapshot => snapshot !== undefined && (id !== undefined || snapshot.savedAt !== undefined));
     const tabs = await readTabs(saved, id => tx.objectStore('tabs').get(id));
     const sessions = saved.map(snapshot => decodeSnapshot(snapshot, tabs))
-      .map(({ windows, name, capturedAt, source }) => ({ windows, name, capturedAt, source }));
+      .map(({ windows, name, capturedAt, source, tags }) => ({ windows, name, capturedAt, source, ...sessionDetails({ tags: tags ?? [] }) }));
     await tx.done;
     if (!sessions.length) throw new Error('No saved sessions are available to export.');
     return { format: 'tabblackbox', version: 1, sessions };

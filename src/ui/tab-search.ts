@@ -1,6 +1,8 @@
+import { parseTabSearchFields, TAB_SEARCH_FIELDS } from '../history';
 import { errorMessage, type TabMatch } from '../model';
 import { TAB_SEARCH_INITIAL_LIMIT, TAB_SEARCH_PAGE_LIMIT, TAB_URL_LIMIT } from '../protocol';
 import { timestamp } from './dates';
+import { createSearchFields } from './search-fields';
 import { button, el, icons, notice, request } from './shared';
 
 export function createTabSearch(options: { label: (title: string, url: string) => HTMLElement; show: (match: TabMatch) => void })
@@ -15,10 +17,16 @@ export function createTabSearch(options: { label: (title: string, url: string) =
   const results = el('div', 'tab-search-results');
   results.setAttribute('aria-live', 'polite');
   results.hidden = true;
-  element.append(input, results);
   let generation = 0;
   let shown = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  // rerun the visible search when its scope changes
+  const fields = createSearchFields({ id: 'tab-search-fields-menu', storageKey: 'tabblackbox.tab-search-fields', fields: TAB_SEARCH_FIELDS, labels: { title: 'Titles', url: 'URLs' }, parse: parseTabSearchFields }, () => {
+    void search(Math.max(shown, TAB_SEARCH_INITIAL_LIMIT));
+  });
+  const group = el('div', 'search-group');
+  group.append(fields.element, input);
+  element.append(group, results);
 
   function result(match: TabMatch): HTMLElement
   {
@@ -32,7 +40,10 @@ export function createTabSearch(options: { label: (title: string, url: string) =
     counts.append(el('strong', '', String(match.automaticCount)), ' automatic · ', el('strong', '', String(match.savedCount)), ' manual');
     seen.append(latest, counts);
     const show = button('Show backups', icons.History, 'button small');
-    show.addEventListener('click', () => options.show(match));
+    show.addEventListener('click', () => {
+      dismiss();
+      options.show(match);
+    });
     item.append(options.label(match.title, match.url), seen, show);
     return item;
   }
@@ -51,7 +62,7 @@ export function createTabSearch(options: { label: (title: string, url: string) =
     }
     try {
       // request every loaded result again so the list stays ordered as new backups arrive
-      const data = await request({ kind: 'tab-search', query, limit });
+      const data = await request({ kind: 'tab-search', query, limit, fields: fields.fields() });
       if (current !== generation) return;
       if (data.kind !== 'tab-search') throw new Error('Unexpected search response.');
       const list = el('ul', 'tab-search-list');
@@ -77,6 +88,18 @@ export function createTabSearch(options: { label: (title: string, url: string) =
     }
   }
 
+  function dismiss(): void
+  {
+    // cancel scheduled and pending searches so their replies cannot reopen the dropdown
+    clearTimeout(timer);
+    generation++;
+    results.hidden = true;
+  }
+
+  // close the result dropdown on Escape or outside interaction and reopen it on focus
+  element.addEventListener('keydown', event => { if (event.key === 'Escape') dismiss(); });
+  document.addEventListener('pointerdown', event => { if (!(event.target instanceof Node && element.contains(event.target))) dismiss(); });
+  input.addEventListener('focus', () => { if (results.hidden && input.value.trim().length >= 2) void search(Math.max(shown, TAB_SEARCH_INITIAL_LIMIT)); });
   // wait for typing to pause before scanning stored tabs
   input.addEventListener('input', () => {
     clearTimeout(timer);

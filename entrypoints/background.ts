@@ -78,11 +78,11 @@ export default defineBackground(() =>
       }
       case 'calendar': return { kind: 'calendar', days: await controller.repository.calendar(request.range) };
       case 'tab-counts': return { kind: 'tab-counts', ...await controller.repository.tabCounts(request.range) };
-      case 'history': return { kind: 'history', ...await controller.repository.history(request.before, request.before ? HISTORY_PAGE_LIMIT : HISTORY_INITIAL_LIMIT, request.collection, request.query, request.sort, request.range, request.tabUrl) };
-      case 'tab-search': return { kind: 'tab-search', ...await controller.repository.searchTabs(request.query, request.limit) };
+      case 'history': return { kind: 'history', ...await controller.repository.history(request.before, request.before ? HISTORY_PAGE_LIMIT : HISTORY_INITIAL_LIMIT, request.collection, request.query, request.sort, request.range, request.tabUrl, request.fields, request.tag) };
+      case 'tab-search': return { kind: 'tab-search', ...await controller.repository.searchTabs(request.query, request.limit, request.fields) };
       case 'snapshot': return { kind: 'snapshot', snapshot: await controller.repository.get(request.id) };
-      case 'rename': return { kind: 'renamed', summary: await controller.repository.rename(request.id, request.name) };
-      case 'keep': return { kind: 'renamed', summary: await controller.repository.keep(request.id, request.name, Date.now()) };
+      case 'rename': return { kind: 'renamed', summary: await controller.repository.rename(request.id, request.name, request.details) };
+      case 'keep': return { kind: 'renamed', summary: await controller.repository.keep(request.id, request.name, Date.now(), request.details) };
       case 'delete-session':
         await controller.deleteSession(request.id);
         return { kind: 'accepted' };

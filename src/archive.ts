@@ -1,7 +1,9 @@
-import type { GroupColor, SavedWindow, Snapshot } from './model';
+import type { GroupColor, SavedWindow, SessionDetails, Snapshot } from './model';
 
 export const SESSION_NAME_LIMIT = 100;
-export type ArchiveSession = Pick<Snapshot, 'windows' | 'name' | 'capturedAt' | 'source'>;
+export const SESSION_TAG_LIMIT = 10;
+export const SESSION_TAG_LENGTH_LIMIT = 30;
+export type ArchiveSession = Pick<Snapshot, 'windows' | 'name' | 'capturedAt' | 'source' | 'tags'>;
 export type Archive = { format: 'tabblackbox'; version: 1; sessions: ArchiveSession[] };
 
 export function parseSessionName(value: unknown): string | null
@@ -10,6 +12,33 @@ export function parseSessionName(value: unknown): string | null
   const name = value?.trim() || null;
   if (name !== null && name.length > SESSION_NAME_LIMIT) throw new Error(`Session names must be ${SESSION_NAME_LIMIT} characters or fewer.`);
   return name;
+}
+
+export function parseSessionTags(value: unknown): string[]
+{
+  if (!Array.isArray(value)) throw new Error('Invalid session tags.');
+  // normalize case and spacing so equivalent tags share one spelling
+  const tags = new Set<string>();
+  for (const item of value) {
+    if (typeof item !== 'string') throw new Error('Invalid session tags.');
+    const tag = item.trim().replace(/\s+/g, ' ').toLocaleLowerCase();
+    if (tag.length > SESSION_TAG_LENGTH_LIMIT) throw new Error(`Tags must be ${SESSION_TAG_LENGTH_LIMIT} characters or fewer.`);
+    if (tag) tags.add(tag);
+  }
+  if (tags.size > SESSION_TAG_LIMIT) throw new Error(`Sessions can have at most ${SESSION_TAG_LIMIT} tags.`);
+  return [...tags];
+}
+
+export function parseSessionDetails(value: unknown): SessionDetails
+{
+  if (typeof value !== 'object' || value === null || !('tags' in value)) throw new Error('Invalid session details.');
+  return { tags: parseSessionTags(value.tags) };
+}
+
+export function sessionDetails({ tags }: SessionDetails): Pick<Snapshot, 'tags'>
+{
+  // omit empty details so untagged sessions keep their stored shape
+  return tags.length ? { tags } : {};
 }
 
 function record(value: unknown): Record<string, unknown>
@@ -53,7 +82,9 @@ export function parseArchive(value: unknown): Archive
     const session = record(value);
     if (!Array.isArray(session.windows) || !session.windows.length || typeof session.capturedAt !== 'number' || !Number.isSafeInteger(session.capturedAt) || session.capturedAt < 0 || session.capturedAt > 8_640_000_000_000_000 ||
         (session.source !== 'automatic' && session.source !== 'manual')) throw new Error('Invalid session in archive.');
-    return { windows: session.windows.map(parseWindow), name: parseSessionName(session.name), capturedAt: session.capturedAt, source: session.source };
+    // accept archives written before tags existed
+    const details = parseSessionDetails({ tags: session.tags ?? [] });
+    return { windows: session.windows.map(parseWindow), name: parseSessionName(session.name), capturedAt: session.capturedAt, source: session.source, ...sessionDetails(details) };
   });
   return { format: 'tabblackbox', version: 1, sessions };
 }

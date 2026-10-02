@@ -107,6 +107,7 @@ export function summarize(snapshot: Snapshot, bytes: number): Summary
   return {
     id: snapshot.id, number: snapshot.number, name: snapshot.name, capturedAt: snapshot.capturedAt, source: snapshot.source,
     ...(snapshot.savedAt === undefined ? {} : { savedAt: snapshot.savedAt }),
+    ...(snapshot.tags === undefined ? {} : { tags: snapshot.tags }),
     windowCount: snapshot.windows.length, tabCount: tabs.length,
     supportedCount: tabs.filter(tab => restorableUrl(tab.url, true)).length,
     bytes,

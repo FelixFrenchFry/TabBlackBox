@@ -4,16 +4,19 @@ export type SavedGroup = { name: string; color: GroupColor; collapsed: boolean }
 export type SavedWindow = { tabs: SavedTab[]; groups: SavedGroup[] };
 export type Session = { windows: SavedWindow[] };
 export type Source = 'automatic' | 'manual';
-export type Snapshot = Session & { id: string; number: number; name: string | null; capturedAt: number; source: Source; savedAt?: number };
+export type SessionDetails = { tags: string[] };
+export type Snapshot = Session & { id: string; number: number; name: string | null; capturedAt: number; source: Source; savedAt?: number; tags?: string[] };
 export type StoredTab = SavedTab & { id: number };
 export type StoredWindow = Omit<SavedWindow, 'tabs'> & { tabs: number[] };
 export type StoredSnapshot = Omit<Snapshot, 'windows'> & { windows: StoredWindow[]; tabIds: number[] };
 export type Collection = 'saved' | 'automatic';
-export type Summary = Pick<Snapshot, 'id' | 'number' | 'name' | 'capturedAt' | 'source' | 'savedAt'> & {
+export type Summary = Pick<Snapshot, 'id' | 'number' | 'name' | 'capturedAt' | 'source' | 'savedAt' | 'tags'> & {
   windowCount: number; tabCount: number; supportedCount: number; bytes: number;
 };
 export type TabCountPoint = Pick<Summary, 'id' | 'number' | 'capturedAt' | 'tabCount' | 'windowCount'> & { collection: Collection };
 export type TabMatch = { url: string; title: string; lastSeen: number; lastSeenNumber: number; lastSeenCollection: Collection; automaticCount: number; savedCount: number };
+export type SearchField = 'name' | 'tags';
+export type TabSearchField = 'title' | 'url';
 export type HistorySort = 'date-desc' | 'date-asc' | 'number-desc' | 'number-asc';
 export type HistoryCursor = Pick<Summary, 'capturedAt' | 'number' | 'id'>;
 export type HistoryRange = { start: number; end: number };

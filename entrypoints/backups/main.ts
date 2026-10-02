@@ -1,6 +1,6 @@
 import { timestamp } from '../../src/ui/dates';
 import { errorMessage, type Collection, type HistoryRange, type HistorySort, type Operation, type Overview, type Snapshot, type Summary, type TabMatch } from '../../src/model';
-import { compareHistory, parseHistorySort } from '../../src/history';
+import { compareHistory, parseHistorySort, parseSearchFields, SEARCH_FIELDS } from '../../src/history';
 import { parseArchive } from '../../src/archive';
 import { MB } from '../../src/storage';
 import { FILE_ACCESS_MESSAGE, fileUrl, restorableUrl, selectWindows } from '../../src/session';
@@ -13,7 +13,9 @@ import { createHelp } from '../../src/ui/help';
 import { createSettingsView } from '../../src/ui/settings';
 import { createBackupCalendar } from '../../src/ui/calendar';
 import { createTabChart } from '../../src/ui/tab-chart';
+import { createSearchFields } from '../../src/ui/search-fields';
 import { createTabSearch } from '../../src/ui/tab-search';
+import { createTagEditor } from '../../src/ui/tag-editor';
 import { setTooltip } from '../../src/ui/tooltip';
 import { HISTORY_INITIAL_LIMIT, HISTORY_PAGE_LIMIT, SESSION_NAME_LIMIT } from '../../src/protocol';
 
@@ -34,8 +36,11 @@ settingsLink.prepend(icon(icons.Settings));
 nav.append(active, settingsLink);
 const main = el('main', 'history-main');
 const heading = el('div', 'page-heading');
-const titles = el('div');
-titles.append(el('h1', '', 'Backup history'), el('p', 'muted', 'Browse manual and automatic browser session backups. Expand a backup to view its tabs, windows, and tab groups, open individual URLs, or restore the session.'));
+const titles = el('div', 'page-titles');
+// share the title row with tab search
+const titleRow = el('div', 'page-title-row');
+titleRow.append(el('h1', '', 'Backup history'));
+titles.append(titleRow, el('p', 'muted', 'Browse manual and automatic browser session backups. Expand a backup to view its tabs, windows, and tab groups, open individual URLs, or restore the session.'));
 const backup = createBackupButton(() => { void refresh('backup'); });
 heading.append(titles);
 const statusCard = createStatusView();
@@ -106,7 +111,7 @@ function historyPanel(collection: Collection)
   element.append(list, more);
   const items: Summary[] = [];
   const filter: { loadedRange: HistoryRange | null; loadedTabUrl: string | null } = { loadedRange: null, loadedTabUrl: null };
-  return { element, list, content, header, toolbar, sortButtons, updateSort, sort, loadedSort: sort, rememberSort: false, count, usage, dateFeedback, rows, more, collection, query: '', items, ...filter, generation: 0, sessionRows: new Map<string, ReturnType<typeof row>>() };
+  return { element, list, content, header, toolbar, sortButtons, updateSort, sort, loadedSort: sort, rememberSort: false, count, usage, dateFeedback, rows, more, collection, query: '', tag: null as string | null, items, ...filter, generation: 0, sessionRows: new Map<string, ReturnType<typeof row>>() };
 }
 
 const savedPanel = historyPanel('saved');
@@ -120,6 +125,7 @@ const calendar = createBackupCalendar(range => {
 });
 const tabChart = createTabChart();
 const tabSearch = createTabSearch({ label: tabLabel, show: filterByTab });
+titleRow.append(tabSearch.element);
 const tabFilter = el('div', 'tab-filter');
 tabFilter.hidden = true;
 const tabFilterLabel = el('p');
@@ -133,11 +139,17 @@ search.type = 'search';
 search.placeholder = 'Search session names';
 search.setAttribute('aria-label', 'Search session names');
 search.maxLength = SESSION_NAME_LIMIT;
-savedPanel.toolbar.prepend(search);
+const searchFields = createSearchFields({ id: 'search-fields-menu', storageKey: 'tabblackbox.search-fields', fields: SEARCH_FIELDS, labels: { name: 'Names', tags: 'Tags' }, parse: parseSearchFields }, () => {
+  void searchHistory(search.value).catch(showError);
+});
+// attach the search scope to the start of the search field
+const searchGroup = el('div', 'search-group');
+searchGroup.append(searchFields.element, search);
+savedPanel.toolbar.prepend(searchGroup);
 savedPanel.toolbar.append(backup.element, exportAll, importSessions);
 const footer = el('footer', 'history-footer');
 footer.append(icon(icons.HardDrive), el('span', '', 'Backups are stored on this device. Automatic backups are removed as needed. Manual backups stay until deleted explicitly. Export them to keep an external copy.'));
-main.append(heading, status, feedback, calendar.element, tabChart.element, tabSearch.element, tabFilter, ...panels.map(panel => panel.element), footer);
+main.append(heading, status, feedback, calendar.element, tabChart.element, tabFilter, ...panels.map(panel => panel.element), footer);
 const settings = createSettingsView(() => toast.show('Settings have been saved'));
 root.append(header, nav, main, settings.element, toast.element);
 
@@ -405,6 +417,14 @@ function preview(snapshot: Snapshot): HTMLElement
   return content;
 }
 
+function updateSummary(summary: Summary): void
+{
+  for (const panel of panels) {
+    panel.items = panel.items.map(value => value.id === summary.id ? summary : value);
+    panel.sessionRows.get(summary.id)?.update(summary);
+  }
+}
+
 function nameSession(item: Summary, trigger: HTMLButtonElement, action: 'rename' | 'keep'): void
 {
   const events = new AbortController();
@@ -413,7 +433,7 @@ function nameSession(item: Summary, trigger: HTMLButtonElement, action: 'rename'
   title.id = 'rename-title';
   dialog.setAttribute('aria-labelledby', title.id);
   const form = el('form');
-  const label = el('label', 'setting-name', action === 'keep' ? 'Name' : 'Session name');
+  const label = el('label', 'setting-name', 'Name');
   label.htmlFor = 'session-name';
   const input = el('input', 'session-name-input');
   input.id = label.htmlFor;
@@ -426,10 +446,19 @@ function nameSession(item: Summary, trigger: HTMLButtonElement, action: 'rename'
   // place naming actions in the shared dialog action row
   const actions = el('div', 'dialog-actions');
   const cancel = button('Cancel', icons.X);
-  const save = button(action === 'rename' ? 'Save name' : 'Keep session', action === 'rename' ? icons.Pencil : icons.Bookmark, 'button primary');
+  const save = button(action === 'rename' ? 'Save' : 'Keep session', action === 'rename' ? icons.Pencil : icons.Bookmark, 'button primary');
   save.type = 'submit';
   actions.append(cancel, save);
   form.append(label, input);
+  // offer tags only for manual backups
+  const manual = action === 'keep' || item.savedAt !== undefined;
+  // preview created and removed tags in the session row while the dialog is open
+  const editor = createTagEditor(item.tags ?? [], tags => updateSummary({ ...item, tags }));
+  if (manual) {
+    const tagsLabel = el('label', 'setting-name session-detail', 'Tags');
+    tagsLabel.htmlFor = editor.input.id = 'session-tags';
+    form.append(tagsLabel, editor.element);
+  }
   if (action === 'keep') {
     input.setAttribute('aria-describedby', 'session-name-description');
     heading.append(createHelp('session-name-description', 'About keeping this session', 'Turn this automatic backup into a manual backup, so it remains saved until you delete it. Give it a name, or leave it blank to use ‘Unnamed session’.', events.signal));
@@ -438,10 +467,14 @@ function nameSession(item: Summary, trigger: HTMLButtonElement, action: 'rename'
   feedback.setAttribute('aria-live', 'polite');
   form.append(feedback, actions);
   dialog.append(action === 'keep' ? heading : title, form);
+  const controls = [input, cancel, save];
   let saving = false;
+  let saved = false;
   cancel.addEventListener('click', () => dialog.close());
   dialog.addEventListener('cancel', event => { if (saving) event.preventDefault(); });
   dialog.addEventListener('close', () => {
+    // discard the tag preview unless the session was saved
+    if (manual && !saved) updateSummary(item);
     events.abort();
     sessionDialogLock.release();
     dialog.remove();
@@ -452,22 +485,21 @@ function nameSession(item: Summary, trigger: HTMLButtonElement, action: 'rename'
     event.preventDefault();
     if (saving) return;
     saving = true;
-    input.disabled = cancel.disabled = save.disabled = true;
+    for (const control of controls) control.disabled = true;
+    editor.setDisabled(true);
     feedback.replaceChildren();
     void (async () => {
       try {
-        const data = await request({ kind: action, id: item.id, name: input.value });
+        const data = await request({ kind: action, id: item.id, name: input.value, ...(manual ? { details: { tags: editor.tags() } } : {}) });
         if (data.kind !== 'renamed') throw new Error('Unexpected session response.');
-        for (const panel of panels) {
-          panel.items = panel.items.map(value => value.id === item.id ? data.summary : value);
-          panel.sessionRows.get(item.id)?.update(data.summary);
-        }
+        updateSummary(data.summary);
+        saved = true;
         dialog.close();
         if (action === 'keep') await searchHistory('').catch(showError);
         await refresh('overview');
         if (action === 'rename') toast.show('Session renamed');
       } catch (error) { feedback.replaceChildren(notice(errorMessage(error))); }
-      finally { saving = false; input.disabled = cancel.disabled = save.disabled = false; }
+      finally { saving = false; for (const control of controls) control.disabled = false; editor.setDisabled(false); }
     })();
   });
   if (!sessionDialogLock.acquire()) { events.abort(); return; }
@@ -565,6 +597,20 @@ function deleteSession(item: Summary, trigger: HTMLButtonElement): void
   }
 }
 
+function tagChip(tag: string): HTMLButtonElement
+{
+  const chip = el('button', 'tag-chip', tag);
+  chip.type = 'button';
+  setTooltip(chip, 'Search saved sessions for this tag');
+  // filter by this exact tag without toggling the session row even when tags were excluded from the search
+  chip.addEventListener('click', event => {
+    event.preventDefault();
+    searchFields.include('tags');
+    void searchHistory(tag, tag).catch(showError);
+  });
+  return chip;
+}
+
 function row(item: Summary)
 {
   const wrapper = el('article', 'backup-row');
@@ -577,6 +623,8 @@ function row(item: Summary)
   date.className = 'backup-date';
   const number = el('span', 'backup-number', `#${item.number}`);
   const counts = el('span', 'muted', `${plural(item.windowCount, 'window')} · ${plural(item.tabCount, 'tab')}`);
+  const tags = el('div', 'backup-tags');
+  let renderedTags = '';
   function update(value: Summary): void
   {
     item = value;
@@ -586,6 +634,13 @@ function row(item: Summary)
     const sessionNumber = `#${item.number}`;
     if (number.textContent !== sessionNumber) number.textContent = sessionNumber;
     rename.setAttribute('aria-label', `Rename session ${sessionNumber}`);
+    // rebuild tags only when they change
+    const sessionTags = item.tags ?? [];
+    if (renderedTags !== sessionTags.join('\n')) {
+      renderedTags = sessionTags.join('\n');
+      tags.replaceChildren(...sessionTags.map(tagChip));
+    }
+    tags.hidden = !sessionTags.length;
   }
   nameRow.append(title);
   label.append(nameRow, counts);
@@ -609,7 +664,7 @@ function row(item: Summary)
   setTooltip(keep, 'Keep as a manual backup');
   keep.hidden = item.savedAt !== undefined;
   keep.addEventListener('click', event => { event.preventDefault(); nameSession(item, keep, 'keep'); });
-  nameRow.append(rename, keep);
+  nameRow.append(rename, keep, tags);
   const exportSession = button('', icons.Download, 'button small');
   exportSession.setAttribute('aria-label', 'Export session');
   setTooltip(exportSession, 'Export session to a file');
@@ -685,7 +740,7 @@ function renderHistory(panel: ReturnType<typeof historyPanel>): void
 
 async function loadHistory(panel: ReturnType<typeof historyPanel>, reset: boolean, preserveLoaded = false): Promise<void>
 {
-  const { items, more, sessionRows, sort, query } = panel;
+  const { items, more, sessionRows, sort, query, tag } = panel;
   const range = historyRange;
   const tabUrl = historyTabUrl;
   const rangeChanged = range?.start !== panel.loadedRange?.start || range?.end !== panel.loadedRange?.end || tabUrl !== panel.loadedTabUrl;
@@ -701,7 +756,7 @@ async function loadHistory(panel: ReturnType<typeof historyPanel>, reset: boolea
   panel.dateFeedback.hidden = !rangeChanged;
   if (rangeChanged) panel.dateFeedback.replaceChildren(el('p', 'muted', 'Loading backups…'));
   try {
-    const data = await request({ kind: 'history', before: last ? { capturedAt: last.capturedAt, number: last.number, id: last.id } : null, collection: panel.collection, query, sort, ...dateFilter });
+    const data = await request({ kind: 'history', before: last ? { capturedAt: last.capturedAt, number: last.number, id: last.id } : null, collection: panel.collection, query, fields: searchFields.fields(), ...(tag === null ? {} : { tag }), sort, ...dateFilter });
     if (generation !== panel.generation) return;
     if (data.kind !== 'history') throw new Error('Unexpected history response.');
     panel.count.textContent = String(data.count);
@@ -716,7 +771,7 @@ async function loadHistory(panel: ReturnType<typeof historyPanel>, reset: boolea
       const lastVisible = preserveLoaded ? items.at(-1) : items.findLast(item => sessionRows.get(item.id)?.details.open);
       const end = loaded.at(-1);
       if (!lastVisible || !end || compareHistory(end, lastVisible, sort) >= 0) break;
-      const older = await request({ kind: 'history', before: { capturedAt: end.capturedAt, number: end.number, id: end.id }, collection: panel.collection, query, sort, ...dateFilter });
+      const older = await request({ kind: 'history', before: { capturedAt: end.capturedAt, number: end.number, id: end.id }, collection: panel.collection, query, fields: searchFields.fields(), ...(tag === null ? {} : { tag }), sort, ...dateFilter });
       if (generation !== panel.generation) return;
       if (older.kind !== 'history') throw new Error('Unexpected history response.');
       page = older.items;
@@ -770,6 +825,7 @@ async function loadHistory(panel: ReturnType<typeof historyPanel>, reset: boolea
 function resetHistoryFilters(): void
 {
   search.value = savedPanel.query = '';
+  savedPanel.tag = null;
   historyRange = null;
   calendar.clear();
   historyTabUrl = null;
@@ -782,9 +838,11 @@ function resetHistoryFilters(): void
   }
 }
 
-function searchHistory(query: string): Promise<void>
+function searchHistory(query: string, tag: string | null = null): Promise<void>
 {
   search.value = savedPanel.query = query;
+  // filter by an exact tag until the search text changes
+  savedPanel.tag = tag;
   // invalidate pending results and reload independently of overview polling
   return loadHistory(savedPanel, true);
 }
