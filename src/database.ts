@@ -1,11 +1,11 @@
 import { applyAutomaticUpdate, DEFAULT_AUTOMATIC_SETTINGS } from './automatic';
-import { openDB, type DBSchema, type IDBPDatabase, type IDBPTransaction } from 'idb';
+import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 import type { AutomaticUpdate, BackupDay, CaptureResult, Collection, HistoryCursor, HistoryRange, HistorySort, Metadata, Operation, RestoreSettings, SearchField, Session, SessionDetails, Snapshot, Source, StorageSettings, StorageSettingsResult, StoredSnapshot, StoredTab, Summary, TabCountPoint, TabMatch, TabSearchField } from './model';
 import { DEFAULT_RESTORE_SETTINGS } from './restore-settings';
 import { compareHistory, SEARCH_FIELDS, TAB_SEARCH_FIELDS } from './history';
 import { dayRange } from './calendar';
 import { thinTabCounts } from './chart';
-import { sessionDetails, type Archive } from './archive';
+import { sessionDetails, type Archive, type ArchiveSession } from './archive';
 import { canonicalSession, canonicalTab, decodeSnapshot, encodeSnapshot, snapshotTabIds, summarize } from './session';
 import { DEFAULT_STORAGE_SETTINGS, MB, newestAutomaticId, retentionPlan, retentionRemovals, storageTotals, storedBytes } from './storage';
 
@@ -14,6 +14,7 @@ interface BackupDatabase extends DBSchema {
   tabs: { key: number; value: StoredTab; indexes: { url: string } };
   summaries: { key: string; value: Summary; indexes: { capturedAt: number } };
   metadata: { key: string; value: Metadata };
+  imports: { key: number; value: ArchiveSession };
 }
 
 const TAB_SEARCH_RECORD_LIMIT = 500;
@@ -28,13 +29,12 @@ function matchesSearch(item: Summary, search: string, fields: readonly SearchFie
   return texts.some(text => text.toLocaleLowerCase().includes(search));
 }
 
-type WriteTransaction = IDBPTransaction<BackupDatabase, ('snapshots' | 'tabs' | 'summaries' | 'metadata')[], 'readwrite'>;
 type StorageState = { snapshots: StoredSnapshot[]; tabs: Map<number, StoredTab>; tabIds: Map<string, number> };
 
-async function readStorage(tx: WriteTransaction): Promise<StorageState>
+async function readStorage(snapshotStore: { getAll(): Promise<StoredSnapshot[]> }, tabStore: { getAll(): Promise<StoredTab[]> }): Promise<StorageState>
 {
-  const snapshots = await tx.objectStore('snapshots').getAll();
-  const tabs = await tx.objectStore('tabs').getAll();
+  const snapshots = await snapshotStore.getAll();
+  const tabs = await tabStore.getAll();
   return { snapshots, tabs: new Map(tabs.map(tab => [tab.id, tab])), tabIds: new Map(tabs.map(tab => [canonicalTab(tab), tab.id])) };
 }
 
@@ -73,14 +73,14 @@ function updateStorage(metadata: Metadata, state: StorageState): void
   metadata.count = state.snapshots.length;
 }
 
-async function writeTabs(tx: WriteTransaction, state: StorageState, previousLastTabId: number): Promise<void>
+async function writeTabs(store: { delete(id: number): Promise<void>; add(tab: StoredTab): Promise<number> }, state: StorageState, previousLastTabId: number): Promise<void>
 {
   // collect only records absent from every retained session, including saved sessions
   const referenced = new Set(state.snapshots.flatMap(snapshot => snapshot.windows.flatMap(window => window.tabs)));
   for (const [id, tab] of state.tabs) {
     if (!referenced.has(id)) {
-      if (id <= previousLastTabId) await tx.objectStore('tabs').delete(id);
-    } else if (id > previousLastTabId) await tx.objectStore('tabs').add(tab);
+      if (id <= previousLastTabId) await store.delete(id);
+    } else if (id > previousLastTabId) await store.add(tab);
   }
 }
 
@@ -98,7 +98,7 @@ export class Repository {
 
   private db(): Promise<IDBPDatabase<BackupDatabase>>
   {
-    this.connection ??= openDB<BackupDatabase>(this.name, 5, {
+    this.connection ??= openDB<BackupDatabase>(this.name, 6, {
       upgrade(db, oldVersion, _newVersion, transaction)
       {
         void (async () => {
@@ -110,11 +110,14 @@ export class Repository {
             db.createObjectStore('tabs', { keyPath: 'id' }).createIndex('url', 'url');
             db.createObjectStore('summaries', { keyPath: 'id' }).createIndex('capturedAt', 'capturedAt');
             db.createObjectStore('metadata');
+            db.createObjectStore('imports');
             const metadata = initialMetadata();
             if (previous) { metadata.automatic = previous.automatic; metadata.settings = previous.settings; }
             await transaction.objectStore('metadata').put(metadata, 'state');
             return;
           }
+          if (oldVersion < 6) db.createObjectStore('imports');
+          if (oldVersion >= 5) return;
           // add missing indexes to existing sessions and tab records without replacing them
           const tabs = transaction.objectStore('tabs');
           if (!tabs.indexNames.contains('url')) tabs.createIndex('url', 'url');
@@ -320,7 +323,7 @@ export class Repository {
         await tx.done;
         return result;
       }
-      const state = await readStorage(tx);
+      const state = await readStorage(tx.objectStore('snapshots'), tx.objectStore('tabs'));
       const stored = candidate ? internSnapshot(candidate, state, metadata) : undefined;
       // manual saves do not consume the automatic budget or prune its history
       const plan = source === 'manual'
@@ -336,7 +339,7 @@ export class Repository {
       }
       const removed = new Set(plan.removeIds);
       state.snapshots = state.snapshots.filter(snapshot => !removed.has(snapshot.id));
-      await writeTabs(tx, state, previousLastTabId);
+      await writeTabs(tx.objectStore('tabs'), state, previousLastTabId);
       if (candidate && stored) {
         await tx.objectStore('snapshots').add(stored);
         await tx.objectStore('summaries').add(summarize(candidate, storedBytes(stored)));
@@ -371,7 +374,7 @@ export class Repository {
     // update labels and byte accounting together without capturing or applying retention
     const tx = (await this.db()).transaction(['snapshots', 'tabs', 'summaries', 'metadata'], 'readwrite');
     try {
-      const state = await readStorage(tx);
+      const state = await readStorage(tx.objectStore('snapshots'), tx.objectStore('tabs'));
       const snapshot = state.snapshots.find(snapshot => snapshot.id === id);
       if (!snapshot) throw new Error('This backup is no longer available. Refresh history.');
       const metadata = (await tx.objectStore('metadata').get('state')) ?? initialMetadata();
@@ -418,13 +421,13 @@ export class Repository {
       const metadata = (await tx.objectStore('metadata').get('state')) ?? initialMetadata();
       if (metadata.operation?.kind === 'running') throw new Error('Wait for restoration to finish before deleting backups.');
       const deletedLatest = metadata.latestId === id;
-      const state = await readStorage(tx);
+      const state = await readStorage(tx.objectStore('snapshots'), tx.objectStore('tabs'));
       // keep the newest automatic backup as the recovery boundary like retention does
       if (snapshot.savedAt === undefined && newestAutomaticId(state.snapshots, metadata.latestId) === id) throw new Error('The newest automatic backup cannot be deleted.');
       state.snapshots = state.snapshots.filter(snapshot => snapshot.id !== id);
       await tx.objectStore('snapshots').delete(id);
       await tx.objectStore('summaries').delete(id);
-      await writeTabs(tx, state, metadata.lastTabId);
+      await writeTabs(tx.objectStore('tabs'), state, metadata.lastTabId);
       updateStorage(metadata, state);
       metadata.historyRevision++;
       if (deletedLatest) {
@@ -444,45 +447,98 @@ export class Repository {
     }
   }
 
-  async exportSaved(id?: string): Promise<Archive>
+  async exportSaved(visit: (session: ArchiveSession) => void, id?: string, signal?: AbortSignal): Promise<number>
   {
     const tx = (await this.db()).transaction(['snapshots', 'tabs']);
-    const snapshots = id === undefined ? await tx.objectStore('snapshots').getAll() : [await tx.objectStore('snapshots').get(id)];
-    // export any single session by ID but only saved sessions in a complete export
-    const saved = snapshots.filter((snapshot): snapshot is StoredSnapshot => snapshot !== undefined && (id !== undefined || snapshot.savedAt !== undefined));
-    const tabs = await readTabs(saved, id => tx.objectStore('tabs').get(id));
-    const sessions = saved.map(snapshot => decodeSnapshot(snapshot, tabs))
-      .map(({ windows, name, capturedAt, source, tags }) => ({ windows, name, capturedAt, source, ...sessionDetails({ tags: tags ?? [] }) }));
-    await tx.done;
-    if (!sessions.length) throw new Error('No saved sessions are available to export.');
-    return { format: 'tabblackbox', version: 1, sessions };
+    const abort = () => { try { tx.abort(); } catch { /* transaction may already be complete */ } };
+    signal?.addEventListener('abort', abort, { once: true });
+    try {
+      signal?.throwIfAborted();
+      let count = 0;
+      // keep one read transaction across the export so concurrent writes cannot mix revisions
+      for (let cursor = await tx.objectStore('snapshots').openCursor(id); cursor; cursor = await cursor.continue()) {
+        signal?.throwIfAborted();
+        if (id === undefined && cursor.value.savedAt === undefined) continue;
+        const tabs = await readTabs([cursor.value], id => tx.objectStore('tabs').get(id));
+        const { windows, name, capturedAt, source, tags } = decodeSnapshot(cursor.value, tabs);
+        visit({ windows, name, capturedAt, source, ...sessionDetails({ tags: tags ?? [] }) });
+        count++;
+      }
+      signal?.throwIfAborted();
+      await tx.done;
+      if (!count) throw new Error('No saved sessions are available to export.');
+      return count;
+    } catch (error) {
+      try { tx.abort(); } catch { /* transaction may already be complete */ }
+      await tx.done.catch(() => undefined);
+      throw error;
+    } finally { signal?.removeEventListener('abort', abort); }
   }
 
-  async importSaved(archive: Archive, now: number): Promise<void>
+  async clearAbandonedImport(): Promise<void>
   {
-    // import the entire archive without pruning recovery history or replacing its latest pointer
-    const tx = (await this.db()).transaction(['snapshots', 'tabs', 'summaries', 'metadata'], 'readwrite');
+    // a live importing page owns this lock until publication and cleanup finish
+    await navigator.locks.request(`${this.name}:import`, { ifAvailable: true }, async lock => {
+      if (lock) await (await this.db()).clear('imports');
+    });
+  }
+
+  async importSaved(archive: Archive | AsyncIterable<ArchiveSession>, now: number, signal?: AbortSignal, progress?: (count: number) => void): Promise<number>
+  {
+    return navigator.locks.request(`${this.name}:import`, { signal }, async () => {
+      const db = await this.db();
+      // discard abandoned staging only while holding the cross-page import lock
+      await db.clear('imports');
+      try {
+        let count = 0;
+        for await (const session of 'sessions' in archive ? archive.sessions : archive) {
+          signal?.throwIfAborted();
+          await db.add('imports', session, ++count);
+        }
+        signal?.throwIfAborted();
+        if (!count) throw new Error('Choose a TabBlackBox session archive with at least one session.');
+        await this.publishImport(now, signal, progress);
+        return count;
+      } finally {
+        // best-effort cleanup that keeps the import result or original error, later imports and page loads clear leftover staging
+        await db.clear('imports').catch(() => undefined);
+      }
+    });
+  }
+
+  private async publishImport(now: number, signal?: AbortSignal, progress?: (count: number) => void): Promise<void>
+  {
+    // publish staged sessions and metadata together without changing the recovery pointer
+    const tx = (await this.db()).transaction(['imports', 'snapshots', 'tabs', 'summaries', 'metadata'], 'readwrite');
+    const abort = () => { try { tx.abort(); } catch { /* transaction may already be complete */ } };
+    signal?.addEventListener('abort', abort, { once: true });
     try {
+      signal?.throwIfAborted();
       const metadata = (await tx.objectStore('metadata').get('state')) ?? initialMetadata();
       const previousLastTabId = metadata.lastTabId;
-      const state = await readStorage(tx);
-      for (const session of archive.sessions) {
+      const state = await readStorage(tx.objectStore('snapshots'), tx.objectStore('tabs'));
+      let count = 0;
+      for (let cursor = await tx.objectStore('imports').openCursor(); cursor; cursor = await cursor.continue()) {
+        signal?.throwIfAborted();
         const number = nextSessionNumber(metadata, 'manual');
-        const snapshot: Snapshot = { ...session, id: crypto.randomUUID(), number, savedAt: now };
+        const snapshot: Snapshot = { ...cursor.value, id: crypto.randomUUID(), number, savedAt: now };
         const stored = internSnapshot(snapshot, state, metadata);
         await tx.objectStore('snapshots').add(stored);
         await tx.objectStore('summaries').add(summarize(snapshot, storedBytes(stored)));
+        progress?.(++count);
+        signal?.throwIfAborted();
       }
-      await writeTabs(tx, state, previousLastTabId);
+      await writeTabs(tx.objectStore('tabs'), state, previousLastTabId);
       updateStorage(metadata, state);
       metadata.historyRevision++;
       await tx.objectStore('metadata').put(metadata, 'state');
+      await tx.objectStore('imports').clear();
       await tx.done;
     } catch (error) {
       try { tx.abort(); } catch { /* transaction may already be aborted */ }
       await tx.done.catch(() => undefined);
       throw error;
-    }
+    } finally { signal?.removeEventListener('abort', abort); }
   }
 
   async setAutomaticSettings(update: AutomaticUpdate, now: number): Promise<void>

@@ -1,4 +1,4 @@
-import type { Archive } from './archive';
+import type { Archive, ArchiveSession } from './archive';
 
 export type ExportFormat = 'json' | 'markdown' | 'urls' | 'bookmarks';
 
@@ -62,7 +62,7 @@ function urls(archive: Archive): string
 function bookmarks(archive: Archive): string
 {
   // use the Netscape bookmark layout understood by browser importers, with one folder per session and window
-  const lines = ['<!DOCTYPE NETSCAPE-Bookmark-file-1>', '<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">', '<TITLE>Bookmarks</TITLE>', '<H1>Bookmarks</H1>', '<DL><p>'];
+  const lines: string[] = [];
   for (const session of archive.sessions) {
     const added = Math.floor(session.capturedAt / 1000);
     lines.push(`  <DT><H3 ADD_DATE="${added}">${htmlText(singleLine(sessionName(session.name)))}</H3>`, '  <DL><p>');
@@ -75,15 +75,32 @@ function bookmarks(archive: Archive): string
     }
     lines.push('  </DL><p>');
   }
-  lines.push('</DL><p>', '');
-  return lines.join('\n');
+  return `${lines.join('\n')}\n`;
 }
 
 export function formatArchive(archive: Archive, format: ExportFormat): string
 {
+  return archiveHeader(format) + archive.sessions.map((session, index) => formatArchiveSession(session, format, index)).join('') + archiveFooter(format);
+}
+
+export function archiveHeader(format: ExportFormat): string
+{
+  if (format === 'json') return '{"format":"tabblackbox","version":1,"sessions":[';
+  if (format === 'bookmarks') return '<!DOCTYPE NETSCAPE-Bookmark-file-1>\n<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">\n<TITLE>Bookmarks</TITLE>\n<H1>Bookmarks</H1>\n<DL><p>\n';
+  return '';
+}
+
+export function archiveFooter(format: ExportFormat): string
+{
+  return format === 'json' ? ']}' : format === 'bookmarks' ? '</DL><p>\n' : '';
+}
+
+export function formatArchiveSession(session: ArchiveSession, format: ExportFormat, index: number): string
+{
+  const archive: Archive = { format: 'tabblackbox', version: 1, sessions: [session] };
   switch (format) {
-    case 'json': return JSON.stringify(archive, null, 2);
-    case 'markdown': return markdown(archive);
+    case 'json': return `${index ? ',' : ''}${JSON.stringify(session)}`;
+    case 'markdown': return `${index ? '\n' : ''}${markdown(archive)}`;
     case 'urls': return urls(archive);
     case 'bookmarks': return bookmarks(archive);
   }

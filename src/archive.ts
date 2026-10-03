@@ -78,13 +78,16 @@ export function parseArchive(value: unknown): Archive
   // validate imported data before it reaches storage or browser restoration
   const archive = record(value);
   if (archive.format !== 'tabblackbox' || archive.version !== 1 || !Array.isArray(archive.sessions) || !archive.sessions.length) throw new Error('Choose a TabBlackBox session archive with at least one session.');
-  const sessions = archive.sessions.map((value: unknown): ArchiveSession => {
-    const session = record(value);
-    if (!Array.isArray(session.windows) || !session.windows.length || typeof session.capturedAt !== 'number' || !Number.isSafeInteger(session.capturedAt) || session.capturedAt < 0 || session.capturedAt > 8_640_000_000_000_000 ||
-        (session.source !== 'automatic' && session.source !== 'manual')) throw new Error('Invalid session in archive.');
-    // accept archives written before tags existed
-    const details = parseSessionDetails({ tags: session.tags ?? [] });
-    return { windows: session.windows.map(parseWindow), name: parseSessionName(session.name), capturedAt: session.capturedAt, source: session.source, ...sessionDetails(details) };
-  });
+  const sessions = archive.sessions.map(parseArchiveSession);
   return { format: 'tabblackbox', version: 1, sessions };
+}
+
+export function parseArchiveSession(value: unknown): ArchiveSession
+{
+  const session = record(value);
+  if (!Array.isArray(session.windows) || !session.windows.length || typeof session.capturedAt !== 'number' || !Number.isSafeInteger(session.capturedAt) || session.capturedAt < 0 || session.capturedAt > 8_640_000_000_000_000 ||
+      (session.source !== 'automatic' && session.source !== 'manual')) throw new Error('Invalid session in archive.');
+  // accept archives written before tags existed
+  const details = parseSessionDetails({ tags: session.tags ?? [] });
+  return { windows: session.windows.map(parseWindow), name: parseSessionName(session.name), capturedAt: session.capturedAt, source: session.source, ...sessionDetails(details) };
 }

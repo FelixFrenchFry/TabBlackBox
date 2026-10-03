@@ -1,8 +1,9 @@
 import { timestamp } from '../../src/ui/dates';
 import { errorMessage, type Collection, type HistoryRange, type HistorySort, type Operation, type Overview, type Snapshot, type Summary, type TabMatch } from '../../src/model';
 import { compareHistory, parseHistorySort, parseSearchFields, SEARCH_FIELDS } from '../../src/history';
-import { parseArchive } from '../../src/archive';
-import { EXPORT_FORMATS, formatArchive, type ExportFormat } from '../../src/export-formats';
+import { exportArchiveFile, readArchiveFile } from '../../src/archive-file';
+import { Repository } from '../../src/database';
+import { EXPORT_FORMATS, type ExportFormat } from '../../src/export-formats';
 import { MB } from '../../src/storage';
 import { FILE_ACCESS_MESSAGE, fileUrl, restorableUrl, selectWindows } from '../../src/session';
 import { canRestore, createSessionDialogLock } from '../../src/ui/restore-state';
@@ -54,6 +55,12 @@ const status = statusCard.element;
 const feedback = el('div');
 feedback.setAttribute('aria-live', 'polite');
 const toast = createToast();
+const archiveRepository = new Repository();
+let archiveOperation: AbortController | null = null;
+// cancel page-owned file operations before the document and its database connection disappear
+window.addEventListener('pagehide', () => { archiveOperation?.abort(); void archiveRepository.close(); });
+window.addEventListener('beforeunload', event => { if (archiveOperation) event.preventDefault(); });
+void archiveRepository.clearAbandonedImport().catch(showError);
 
 function readHistorySort(collection: Collection): HistorySort
 {
@@ -516,14 +523,14 @@ function showError(error: unknown): void
   feedback.replaceChildren(notice(errorMessage(error)));
 }
 
-async function downloadArchive(format: ExportFormat, id?: string): Promise<void>
+async function downloadArchive(format: ExportFormat, id: string | undefined, signal: AbortSignal, progress: (count: number) => void): Promise<void>
 {
-  const data = await request(id === undefined ? { kind: 'export' } : { kind: 'export', id });
-  if (data.kind !== 'export') throw new Error('Unexpected export response.');
   const details = EXPORT_FORMATS.find(item => item.format === format);
   if (!details) throw new Error('Unknown export format.');
+  const file = await exportArchiveFile(archiveRepository, format, id, signal, progress);
+  signal.throwIfAborted();
   // download through the page without requiring browser download permissions
-  const url = URL.createObjectURL(new Blob([formatArchive(data.archive, format)], { type: details.type }));
+  const url = URL.createObjectURL(file);
   const link = el('a');
   link.href = url;
   link.download = `tabblackbox-${id === undefined ? 'sessions' : 'session'}-${new Date().toISOString().slice(0, 10)}.${details.extension}`;
@@ -617,10 +624,10 @@ function exportSessions(trigger: HTMLButtonElement, item?: Summary): void
   feedback.setAttribute('aria-live', 'polite');
   form.append(formatLabel, formatControl, feedback, actions);
   dialog.append(title, form);
-  const controls = [formatSelect, cancel, save];
+  const controls = [formatSelect, save];
   let exporting = false;
-  cancel.addEventListener('click', () => dialog.close());
-  dialog.addEventListener('cancel', event => { if (exporting) event.preventDefault(); });
+  cancel.addEventListener('click', () => { if (exporting) archiveOperation?.abort(); else dialog.close(); });
+  dialog.addEventListener('cancel', event => { if (exporting) { event.preventDefault(); archiveOperation?.abort(); } });
   dialog.addEventListener('close', () => {
     sessionDialogLock.release();
     dialog.remove();
@@ -632,14 +639,18 @@ function exportSessions(trigger: HTMLButtonElement, item?: Summary): void
     event.preventDefault();
     if (exporting) return;
     exporting = true;
+    const operation = new AbortController();
+    archiveOperation = operation;
     for (const control of controls) control.disabled = true;
-    feedback.replaceChildren();
+    feedback.textContent = 'Preparing export…';
     void (async () => {
       try {
-        await downloadArchive(selected, item?.id);
+        await downloadArchive(selected, item?.id, operation.signal, count => { feedback.textContent = `Preparing ${plural(count, 'session')}…`; });
         dialog.close();
-      } catch (error) { feedback.replaceChildren(notice(errorMessage(error))); }
-      finally { exporting = false; for (const control of controls) control.disabled = false; }
+      } catch (error) {
+        if (operation.signal.aborted) dialog.close();
+        else feedback.replaceChildren(notice(errorMessage(error)));
+      } finally { archiveOperation = null; exporting = false; for (const control of controls) control.disabled = false; }
     })();
   });
   try {
@@ -1059,17 +1070,46 @@ importSessions.addEventListener('click', () => importFile.click());
 importFile.addEventListener('change', () => {
   const file = importFile.files?.[0];
   if (!file) return;
+  if (!sessionDialogLock.acquire()) { importFile.value = ''; return; }
+  const operation = new AbortController();
+  archiveOperation = operation;
+  const dialog = el('dialog', 'restore-dialog');
+  const title = el('h2', '', 'Import sessions');
+  title.id = 'import-title';
+  dialog.setAttribute('aria-labelledby', title.id);
+  const progress = el('p', '', 'Reading archive…');
+  progress.setAttribute('aria-live', 'polite');
+  const cancel = button('Cancel', icons.X);
+  const actions = el('div', 'dialog-actions');
+  actions.append(cancel);
+  dialog.append(title, progress, actions);
+  cancel.addEventListener('click', () => operation.abort());
+  dialog.addEventListener('cancel', event => { event.preventDefault(); operation.abort(); });
   importSessions.disabled = true;
+  updateDialogButtons();
   feedback.replaceChildren();
   void (async () => {
     try {
-      const archive = parseArchive(JSON.parse(await file.text()));
-      await request({ kind: 'import', archive });
+      root.append(dialog);
+      dialog.showModal();
+      const sessions = readArchiveFile(file, operation.signal, bytes => { progress.textContent = `Reading archive… ${Math.floor(bytes / Math.max(file.size, 1) * 100)}%`; });
+      const count = await archiveRepository.importSaved(sessions, Date.now(), operation.signal, count => { progress.textContent = `Importing ${plural(count, 'session')}…`; });
+      archiveOperation = null;
+      dialog.close();
       resetHistoryFilters();
       await refresh('overview');
-      toast.show(`${plural(archive.sessions.length, 'session')} imported`);
-    } catch (error) { showError(error); }
-    finally { importSessions.disabled = false; importFile.value = ''; }
+      toast.show(`${plural(count, 'session')} imported`);
+    } catch (error) { if (!operation.signal.aborted) showError(error); }
+    finally {
+      archiveOperation = null;
+      dialog.close();
+      dialog.remove();
+      sessionDialogLock.release();
+      updateDialogButtons();
+      importSessions.disabled = false;
+      importFile.value = '';
+      importSessions.focus();
+    }
   })();
 });
 void refresh('refresh');

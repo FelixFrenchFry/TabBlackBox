@@ -89,10 +89,6 @@ export default defineBackground(() =>
       case 'delete-session':
         await controller.deleteSession(request.id);
         return { kind: 'accepted' };
-      case 'export': return { kind: 'export', archive: await controller.repository.exportSaved(request.id) };
-      case 'import':
-        await controller.repository.importSaved(request.archive, Date.now());
-        return { kind: 'accepted' };
       case 'restore':
         await controller.restore(request.id);
         return { kind: 'accepted' };
