@@ -149,7 +149,8 @@ export async function exportArchiveFile(repository: Repository, format: ExportFo
       if (bytes > ARCHIVE_FILE_LIMIT) throw new Error('Session archives must be 1 GB or smaller. Export fewer sessions.');
     }
     parts.push(part);
-    progress?.(++count);
+    count++;
+    progress?.(count);
   }, id, signal);
   parts.push(footer);
   signal?.throwIfAborted();

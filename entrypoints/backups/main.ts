@@ -338,11 +338,12 @@ function tabLabel(text: string, url: string | null): HTMLElement
   const label = el('div', 'tab-label');
   const title = el('span', 'tab-title', text || url || 'Unavailable tab');
   let open: HTMLAnchorElement | HTMLButtonElement;
+  let openLabel: string;
   // allow individual navigation for the same URL schemes supported by restoration
   if (url !== null && fileUrl(url)) {
     const file = button('', icons.ArrowUpRight, 'tab-open file-open');
     file.disabled = !fileAccess;
-    file.title = 'Open local file in new tab';
+    openLabel = 'Open local file in new tab';
     file.addEventListener('click', () => {
       void (async () => {
         await updateFileAccess();
@@ -356,14 +357,15 @@ function tabLabel(text: string, url: string | null): HTMLElement
     open.href = url;
     open.target = '_blank';
     open.rel = 'noopener noreferrer';
-    open.title = 'Open in new tab';
+    openLabel = 'Open in new tab';
     open.append(icon(icons.ArrowUpRight));
   } else {
     open = button('', icons.ArrowUpRight, 'tab-open');
     open.disabled = true;
-    open.title = url ? 'This URL cannot be opened from a saved session' : 'No saved URL is available';
+    openLabel = url ? 'This URL cannot be opened from a saved session' : 'No saved URL is available';
   }
-  open.setAttribute('aria-label', open.title);
+  open.setAttribute('aria-label', openLabel);
+  setTooltip(open, openLabel);
   open.append(el('span', 'tab-url', url ?? 'URL unavailable'));
   label.append(favicon(url), title, open);
   return label;

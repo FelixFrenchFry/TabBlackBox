@@ -455,11 +455,13 @@ export class Repository {
     try {
       signal?.throwIfAborted();
       let count = 0;
+      let tabs = new Map<number, StoredTab>();
       // keep one read transaction across the export so concurrent writes cannot mix revisions
       for (let cursor = await tx.objectStore('snapshots').openCursor(id); cursor; cursor = await cursor.continue()) {
         signal?.throwIfAborted();
         if (id === undefined && cursor.value.savedAt === undefined) continue;
-        const tabs = await readTabs([cursor.value], id => tx.objectStore('tabs').get(id));
+        // reuse shared tab records from the previous exported session
+        tabs = await readTabs([cursor.value], async id => tabs.get(id) ?? tx.objectStore('tabs').get(id));
         const { windows, name, capturedAt, source, tags } = decodeSnapshot(cursor.value, tabs);
         visit({ windows, name, capturedAt, source, ...sessionDetails({ tags: tags ?? [] }) });
         count++;
