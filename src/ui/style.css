@@ -252,13 +252,15 @@ details[open] > .backup-summary > svg, details[open] > .calendar-heading > svg {
 .popup-content { padding: 15px 20px; }
 .popup .status-card { border: 0; padding: 0; margin-bottom: 15px; }
 .popup .status-times { flex-direction: column; gap: 3px; }
-.popup-actions { display: flex; gap: 8px; margin-top: 12px; }
-.popup-actions .button { flex: 1; min-width: 0; }
-.closed-tabs-row { width: 100%; justify-content: flex-start; margin-top: 8px; }
-.closed-tabs-row-label { flex: 1; text-align: left; }
+.popup-actions { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; margin-top: 12px; }
+.popup-actions .button { min-width: 0; }
+.popup-actions .backup-button { grid-column: 1 / -1; width: auto; }
+.closed-tabs { display: contents; }
+.closed-tabs-row { width: 100%; justify-content: flex-start; }
+.closed-tabs-row-label { flex: 1; min-width: 0; overflow: hidden; text-align: left; text-overflow: ellipsis; }
 .closed-tabs-row-count { color: var(--fgColor-muted); font-size: 12px; font-weight: 400; }
 .closed-tabs-row[aria-expanded="false"] > svg:last-child { transform: rotate(-90deg); }
-.closed-tabs-body { max-height: 186px; overflow-y: auto; margin-top: 4px; padding-right: 10px; scrollbar-gutter: stable; scrollbar-width: thin; }
+.closed-tabs-body { grid-column: 1 / -1; max-height: 186px; overflow-y: auto; padding-right: 10px; scrollbar-gutter: stable; scrollbar-width: thin; }
 .closed-tabs-body .tab-row { flex-wrap: nowrap; }
 .closed-tabs-body .tab-row:first-child { border-top: 0; }
 .closed-tabs-body .tab-label { min-width: 0; }

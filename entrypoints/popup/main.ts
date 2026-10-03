@@ -21,9 +21,10 @@ feedback.setAttribute('aria-live', 'polite');
 const backup = createBackupButton(() => { void refresh('backup'); });
 const history = button('View backups', icons.History);
 const actions = el('div', 'popup-actions');
-actions.append(backup.element, history);
 const closedTabs = createClosedTabs(error => { feedback.replaceChildren(notice(errorMessage(error))); });
-content.append(status, actions, closedTabs.element, feedback);
+// place the backup button above a row holding the history and closed tabs buttons
+actions.append(backup.element, history, closedTabs.element);
+content.append(status, actions, feedback);
 const footer = el('footer', 'popup-footer');
 footer.append(icon(icons.LockKeyhole, 14), el('span', '', 'Backups are stored on this device. No accounts. No cloud.'));
 root.append(header, content, footer);

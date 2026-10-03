@@ -11,7 +11,7 @@ export function createClosedTabs(onError: (error: unknown) => void)
   row.type = 'button';
   row.setAttribute('aria-expanded', 'false');
   const count = el('span', 'closed-tabs-row-count');
-  row.append(icon(icons.Undo2), el('span', 'closed-tabs-row-label', 'Recently closed tabs'), count, icon(icons.ChevronDown));
+  row.append(icon(icons.Undo2), el('span', 'closed-tabs-row-label', 'Recently closed'), count, icon(icons.ChevronDown));
   const body = el('div', 'closed-tabs-body');
   body.hidden = true;
   const list = el('ul', 'tab-list');
