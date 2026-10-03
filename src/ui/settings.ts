@@ -201,7 +201,7 @@ export function createSettingsView(onSaved: () => void)
   {
     age.input.value = String(settings.retentionDays ?? 90);
     ageLimit.toggle.checked = settings.retentionDays !== null;
-    count.input.value = String(settings.maxBackups ?? 2000);
+    count.input.value = String(settings.maxBackups ?? 5000);
     countLimit.toggle.checked = settings.maxBackups !== null;
     capacity.input.value = String(settings.maxStorageMB);
   }

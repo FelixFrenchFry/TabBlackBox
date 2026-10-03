@@ -2,6 +2,7 @@ import { timestamp } from '../../src/ui/dates';
 import { errorMessage, type Collection, type HistoryRange, type HistorySort, type Operation, type Overview, type Snapshot, type Summary, type TabMatch } from '../../src/model';
 import { compareHistory, parseHistorySort, parseSearchFields, SEARCH_FIELDS } from '../../src/history';
 import { parseArchive } from '../../src/archive';
+import { EXPORT_FORMATS, formatArchive, type ExportFormat } from '../../src/export-formats';
 import { MB } from '../../src/storage';
 import { FILE_ACCESS_MESSAGE, fileUrl, restorableUrl, selectWindows } from '../../src/session';
 import { canRestore, createSessionDialogLock } from '../../src/ui/restore-state';
@@ -261,30 +262,34 @@ async function confirmRestore(load: () => Snapshot | Promise<Snapshot>, trigger:
     dialog.setAttribute('aria-labelledby', 'restore-title');
     const title = el('h2', '', windowIndex === undefined ? 'Restore this session?' : `Restore window ${windowIndex + 1}?`);
     title.id = 'restore-title';
-    dialog.append(title, el('p', '', `${plural(supported, 'tab')} will open in ${plural(windows, 'new window')}. Your current windows will stay open.`));
+    dialog.append(title, sessionCard({ ...snapshot, windowCount: snapshot.windows.length, tabCount: snapshot.windows.reduce((total, window) => total + window.tabs.length, 0) }), el('p', '', `${plural(supported, 'tab')} will open in ${plural(windows, 'new window')}. Your current windows will stay open.`));
     if (blockedFiles) {
       dialog.append(el('p', 'muted', `${plural(blockedFiles, 'local file')} will be skipped until file access is enabled.`), fileAccessNotice());
       dialog.append(el('p', 'muted', 'After enabling access, close this dialog and choose Restore again.'));
     }
     if (tabs.length > supported + blockedFiles) dialog.append(el('p', 'muted', `${plural(tabs.length - supported - blockedFiles, 'unsupported tab')} will be skipped. Their saved URLs remain in the preview.`));
     dialog.append(el('p', 'muted', windowIndex === undefined ? 'Restoring a session again creates another copy of its tabs.' : 'Restoring a window again creates another copy of its tabs.'));
+    const feedback = el('div');
+    feedback.setAttribute('aria-live', 'polite');
     const actions = el('div', 'dialog-actions');
     const cancel = button('Cancel', icons.X);
-    const confirm = button(windowIndex === undefined ? 'Restore session' : `Restore window ${windowIndex + 1}`, icons.RotateCcw, 'button primary');
+    const confirm = button('Restore', icons.RotateCcw, 'button primary');
     confirm.disabled = supported === 0;
     actions.append(cancel, confirm);
-    dialog.append(actions);
+    dialog.append(feedback, actions);
     root.append(dialog);
     cancel.addEventListener('click', () => dialog.close());
     dialog.addEventListener('close', () => {
       sessionDialogLock.release();
       dialog.remove();
       updateDialogButtons();
-      trigger.focus();
+      if (trigger.isConnected) trigger.focus();
+      else backup.element.focus();
     }, { once: true });
     confirm.addEventListener('click', () =>
     {
       confirm.disabled = true;
+      feedback.replaceChildren();
       void (async () =>
       {
         try {
@@ -294,7 +299,7 @@ async function confirmRestore(load: () => Snapshot | Promise<Snapshot>, trigger:
           updateSave();
           dialog.close();
           await refresh('overview');
-        } catch (error) { dialog.append(notice(errorMessage(error))); confirm.disabled = false; }
+        } catch (error) { feedback.replaceChildren(notice(errorMessage(error))); confirm.disabled = false; }
       })();
     });
     dialog.showModal();
@@ -431,9 +436,11 @@ function nameSession(item: Summary, trigger: HTMLButtonElement, action: 'rename'
   // place naming actions in the shared dialog action row
   const actions = el('div', 'dialog-actions');
   const cancel = button('Cancel', icons.X);
-  const save = button(action === 'rename' ? 'Save' : 'Keep session', action === 'rename' ? icons.Pencil : icons.Bookmark, 'button primary');
+  const save = button(action === 'rename' ? 'Save' : 'Keep', action === 'rename' ? icons.Pencil : icons.Bookmark, 'button primary');
   save.type = 'submit';
   actions.append(cancel, save);
+  // show which automatic backup is being kept
+  if (action === 'keep') form.append(sessionCard(item));
   form.append(label, input);
   // offer tags only for manual backups
   const manual = action === 'keep' || item.savedAt !== undefined;
@@ -464,7 +471,8 @@ function nameSession(item: Summary, trigger: HTMLButtonElement, action: 'rename'
     sessionDialogLock.release();
     dialog.remove();
     updateDialogButtons();
-    trigger.focus();
+    if (trigger.isConnected) trigger.focus();
+    else backup.element.focus();
   }, { once: true });
   form.addEventListener('submit', event => {
     event.preventDefault();
@@ -508,25 +516,143 @@ function showError(error: unknown): void
   feedback.replaceChildren(notice(errorMessage(error)));
 }
 
-function showExportError(error: unknown): void
-{
-  // report failed downloads temporarily without shifting the history layout
-  toast.show(errorMessage(error), icons.CircleAlert);
-}
-
-async function downloadArchive(id?: string): Promise<void>
+async function downloadArchive(format: ExportFormat, id?: string): Promise<void>
 {
   const data = await request(id === undefined ? { kind: 'export' } : { kind: 'export', id });
   if (data.kind !== 'export') throw new Error('Unexpected export response.');
+  const details = EXPORT_FORMATS.find(item => item.format === format);
+  if (!details) throw new Error('Unknown export format.');
   // download through the page without requiring browser download permissions
-  const url = URL.createObjectURL(new Blob([JSON.stringify(data.archive, null, 2)], { type: 'application/json' }));
+  const url = URL.createObjectURL(new Blob([formatArchive(data.archive, format)], { type: details.type }));
   const link = el('a');
   link.href = url;
-  link.download = `tabblackbox-${id === undefined ? 'sessions' : 'session'}-${new Date().toISOString().slice(0, 10)}.json`;
+  link.download = `tabblackbox-${id === undefined ? 'sessions' : 'session'}-${new Date().toISOString().slice(0, 10)}.${details.extension}`;
   root.append(link);
   link.click();
   link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+async function savedRange(): Promise<{ count: number; oldest: number; newest: number } | null>
+{
+  // read the oldest and newest saved sessions through the history request
+  const [first, last] = await Promise.all((['date-asc', 'date-desc'] as const).map(sort => request({ kind: 'history', before: null, collection: 'saved', sort })));
+  if (first?.kind !== 'history' || last?.kind !== 'history') throw new Error('Unexpected history response.');
+  const oldest = first.items[0];
+  const newest = last.items[0];
+  return oldest && newest ? { count: first.count, oldest: oldest.capturedAt, newest: newest.capturedAt } : null;
+}
+
+// identify a session inside a dialog
+function sessionCard(item: Pick<Summary, 'name' | 'number' | 'capturedAt' | 'windowCount' | 'tabCount'>): HTMLElement
+{
+  const card = el('div', 'session-card');
+  const name = el('div', 'session-card-name');
+  name.append(el('strong', 'session-card-title', item.name ?? 'Unnamed session'), el('span', 'muted', `#${item.number}`));
+  const details = el('div', 'muted');
+  details.append(timestamp(item.capturedAt), document.createTextNode(` · ${plural(item.windowCount, 'window')} · ${plural(item.tabCount, 'tab')}`));
+  card.append(name, details);
+  return card;
+}
+
+function savedSessionsCard(): HTMLElement
+{
+  const card = el('div', 'session-card');
+  const name = el('div', 'session-card-name');
+  const count = el('span', 'muted');
+  name.append(el('strong', 'session-card-title', 'All saved sessions'), count);
+  const details = el('div', 'muted');
+  card.append(name, details);
+  // fill in the count and capture range once loaded
+  void savedRange().then(range => {
+    if (!range) return;
+    count.textContent = plural(range.count, 'session');
+    details.append(timestamp(range.oldest));
+    if (range.newest !== range.oldest) details.append(document.createTextNode(' to '), timestamp(range.newest));
+  }).catch(() => { /* the card keeps its name when the range is unavailable */ });
+  return card;
+}
+
+function exportSessions(trigger: HTMLButtonElement, item?: Summary): void
+{
+  if (!sessionDialogLock.acquire()) return;
+  const dialog = el('dialog', 'restore-dialog');
+  const title = el('h2', '', item ? 'Export session' : 'Export sessions');
+  title.id = 'export-title';
+  dialog.setAttribute('aria-labelledby', title.id);
+  const form = el('form');
+  form.append(item ? sessionCard(item) : savedSessionsCard());
+  const formatLabel = el('label', 'setting-name export-format-label', 'Format');
+  formatLabel.htmlFor = 'export-format';
+  const formatSelect = el('select', 'settings-select');
+  formatSelect.id = formatLabel.htmlFor;
+  for (const { format, label: formatName } of EXPORT_FORMATS) {
+    const option = el('option', '', formatName);
+    option.value = format;
+    formatSelect.append(option);
+  }
+  const formatControl = el('div', 'settings-select-control export-format');
+  const hint = el('span', 'muted export-hint');
+  hint.id = 'export-format-hint';
+  // show the description inside the menu button, beside the chosen format
+  formatControl.append(formatSelect, hint, icon(icons.ChevronDown));
+  formatSelect.setAttribute('aria-describedby', hint.id);
+  let selected: ExportFormat = 'json';
+  function selectFormat(): void
+  {
+    // describe the chosen format beside it
+    const current = EXPORT_FORMATS.find(item => item.format === formatSelect.value);
+    if (!current) return;
+    selected = current.format;
+    hint.textContent = current.hint;
+  }
+  formatSelect.addEventListener('change', selectFormat);
+  selectFormat();
+  const actions = el('div', 'dialog-actions');
+  const cancel = button('Cancel', icons.X);
+  const save = button('Export', icons.Download, 'button primary');
+  save.type = 'submit';
+  actions.append(cancel, save);
+  const feedback = el('div');
+  feedback.setAttribute('aria-live', 'polite');
+  form.append(formatLabel, formatControl, feedback, actions);
+  dialog.append(title, form);
+  const controls = [formatSelect, cancel, save];
+  let exporting = false;
+  cancel.addEventListener('click', () => dialog.close());
+  dialog.addEventListener('cancel', event => { if (exporting) event.preventDefault(); });
+  dialog.addEventListener('close', () => {
+    sessionDialogLock.release();
+    dialog.remove();
+    updateDialogButtons();
+    if (trigger.isConnected) trigger.focus();
+    else backup.element.focus();
+  }, { once: true });
+  form.addEventListener('submit', event => {
+    event.preventDefault();
+    if (exporting) return;
+    exporting = true;
+    for (const control of controls) control.disabled = true;
+    feedback.replaceChildren();
+    void (async () => {
+      try {
+        await downloadArchive(selected, item?.id);
+        dialog.close();
+      } catch (error) { feedback.replaceChildren(notice(errorMessage(error))); }
+      finally { exporting = false; for (const control of controls) control.disabled = false; }
+    })();
+  });
+  try {
+    updateDialogButtons();
+    root.append(dialog);
+    dialog.showModal();
+    formatSelect.focus();
+  } catch (error) {
+    dialog.remove();
+    sessionDialogLock.release();
+    updateDialogButtons();
+    showError(error);
+  }
 }
 
 function deleteSession(item: Summary, trigger: HTMLButtonElement): void
@@ -537,10 +663,10 @@ function deleteSession(item: Summary, trigger: HTMLButtonElement): void
   const title = el('h2', '', saved ? 'Delete saved session?' : 'Delete automatic backup?');
   title.id = 'delete-session-title';
   dialog.setAttribute('aria-labelledby', title.id);
-  dialog.append(title, el('p', '', `“${item.name ?? 'Unnamed session'}” will be permanently deleted. Export a copy first if you want to keep it.`));
+  dialog.append(title, sessionCard(item), el('p', '', `“${item.name ?? 'Unnamed session'}” will be permanently deleted. Export a copy first if you want to keep it.`));
   const actions = el('div', 'dialog-actions');
   const cancel = button('Cancel', icons.X);
-  const remove = button('Delete session', icons.Trash2, 'button danger');
+  const remove = button('Delete', icons.Trash2, 'button danger');
   const feedback = el('div');
   feedback.setAttribute('aria-live', 'polite');
   actions.append(cancel, remove);
@@ -653,7 +779,7 @@ function row(item: Summary)
   const exportSession = button('', icons.Download, 'button small icon-button');
   exportSession.setAttribute('aria-label', 'Export session');
   setTooltip(exportSession, 'Export session to a file');
-  exportSession.addEventListener('click', () => { void downloadArchive(item.id).catch(showExportError); });
+  exportSession.addEventListener('click', () => exportSessions(exportSession, item));
   const remove = button('', icons.Trash2, 'button small icon-button');
   remove.setAttribute('aria-label', 'Delete session');
   setTooltip(remove, item.savedAt === undefined ? 'Delete this automatic backup' : 'Delete this saved session');
@@ -923,7 +1049,7 @@ window.addEventListener('storage', event => {
 search.addEventListener('input', () => {
   void searchHistory(search.value).catch(showError);
 });
-exportAll.addEventListener('click', () => { void downloadArchive().catch(showExportError); });
+exportAll.addEventListener('click', () => exportSessions(exportAll));
 const importFile = el('input');
 importFile.type = 'file';
 importFile.accept = '.json,application/json';
