@@ -26,8 +26,26 @@ function markdownText(text: string): string
 
 function markdownUrl(url: string): string
 {
-  // percent-encode characters that end or break a link destination
-  return url.replace(/[ ()<>]/g, character => `%${character.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')}`);
+  // protect link destinations from Markdown punctuation and entity decoding
+  return url.replace(/[\\ ()<>]/g, character => `%${character.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')}`).replace(/&/g, '&amp;');
+}
+
+function markdownCode(text: string): string
+{
+  let length = 1;
+  for (const match of text.matchAll(/`+/g)) length = Math.max(length, match[0].length + 1);
+  const fence = '`'.repeat(length);
+  return `${fence} ${singleLine(text)} ${fence}`;
+}
+
+function exportUrl(url: string | null): string | null
+{
+  if (url === null) return null;
+  try {
+    // validate and emit the same parsed URL at the clickable export boundary
+    const parsed = new URL(url);
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? parsed.href : null;
+  } catch { return null; }
 }
 
 function htmlText(text: string): string
@@ -45,7 +63,10 @@ function markdown(archive: Archive): string
       for (const tab of window.tabs) {
         const title = markdownText(tab.title || tab.url || 'Untitled tab');
         const group = tab.group === null ? undefined : window.groups[tab.group]?.name;
-        lines.push(`- ${tab.url === null ? title : `[${title}](${markdownUrl(tab.url)})`}${group ? ` _(${markdownText(group)})_` : ''}`);
+        const url = exportUrl(tab.url);
+        // code spans retain unsupported URLs without creating links or embedded markup
+        const text = url !== null ? `[${title}](${markdownUrl(url)})` : tab.url === null ? title : `${tab.title ? `${title}: ` : ''}${markdownCode(tab.url)}`;
+        lines.push(`- ${text}${group ? ` _(${markdownText(group)})_` : ''}`);
       }
       lines.push('');
     }
@@ -69,7 +90,11 @@ function bookmarks(archive: Archive): string
     for (const [index, window] of session.windows.entries()) {
       lines.push(`    <DT><H3 ADD_DATE="${added}">Window ${index + 1}</H3>`, '    <DL><p>');
       for (const tab of window.tabs) {
-        if (tab.url !== null) lines.push(`      <DT><A HREF="${htmlText(tab.url)}" ADD_DATE="${added}">${htmlText(singleLine(tab.title || tab.url))}</A>`);
+        if (tab.url === null) continue;
+        const url = exportUrl(tab.url);
+        const title = htmlText(singleLine(tab.title || tab.url));
+        if (url !== null) lines.push(`      <DT><A HREF="${htmlText(url)}" ADD_DATE="${added}">${title}</A>`);
+        else lines.push(`      <DT>${tab.title ? `${title}: ` : ''}<CODE>${htmlText(singleLine(tab.url))}</CODE>`);
       }
       lines.push('    </DL><p>');
     }
