@@ -256,8 +256,10 @@ details[open] > .backup-summary > svg, details[open] > .calendar-heading > svg {
 .setting-name { font-weight: 600; }
 .setting-description p { font-size: 12px; margin-top: 3px; }
 .settings-number-control { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-.settings-number-control > span { width: 52px; font-size: 12px; }
-.settings-number { width: 110px; min-height: 34px; padding: 6px 10px; border: 1px solid var(--borderColor-default); border-radius: 6px; color: var(--fgColor-default); background: var(--bgColor-muted); }
+.settings-number-field { position: relative; flex-shrink: 0; }
+.settings-number::-webkit-inner-spin-button, .settings-number::-webkit-outer-spin-button { appearance: none; margin: 0; }
+.settings-number-unit { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); color: var(--fgColor-muted); font-size: 12px; pointer-events: none; }
+.settings-number { width: 160px; min-height: 34px; padding: 6px 64px 6px 12px; border: 1px solid var(--borderColor-default); border-radius: 6px; color: var(--fgColor-default); background: var(--bgColor-muted); }
 .popup-content { padding: 15px 20px; }
 .popup .status-card { border: 0; padding: 0; margin-bottom: 15px; }
 .popup .status-times { flex-direction: column; gap: 3px; }
@@ -317,10 +319,10 @@ input.limit-switch[type="checkbox"]:checked { background: #1f6feb; border-color:
 input.limit-switch[type="checkbox"]:checked::after { transform: translateX(22px); background: #fff; }
 input.limit-switch[type="checkbox"]:focus-visible { outline: 2px solid var(--fgColor-accent, #58a6ff); outline-offset: 3px; }
 input.limit-switch[type="checkbox"]:disabled { cursor: default; opacity: .55; }
-.storage-setting-row .setting-description, .settings-number-control > .settings-number, .settings-number-control > span { transition: opacity 150ms ease, filter 150ms ease; }
-.storage-setting-row.is-inactive .setting-description, .storage-setting-row.is-inactive .settings-number-control > .settings-number, .storage-setting-row.is-inactive .settings-number-control > span { opacity: .5; filter: grayscale(1); }
+.storage-setting-row .setting-description, .settings-number-field { transition: opacity 150ms ease, filter 150ms ease; }
+.storage-setting-row.is-inactive .setting-description, .storage-setting-row.is-inactive .settings-number-field { opacity: .5; filter: grayscale(1); }
 @media (prefers-reduced-motion: reduce) {
-  input.limit-switch[type="checkbox"], input.limit-switch[type="checkbox"]::after, .storage-setting-row .setting-description, .settings-number-control > .settings-number, .settings-number-control > span { transition: none; }
+  input.limit-switch[type="checkbox"], input.limit-switch[type="checkbox"]::after, .storage-setting-row .setting-description, .settings-number-field { transition: none; }
 }
 
 input.limit-switch[type="checkbox"]::before { content: ''; position: absolute; top: 7px; right: 7px; width: 10px; height: 10px; box-sizing: border-box; border: 1px solid var(--fgColor-muted); border-radius: 50%; }

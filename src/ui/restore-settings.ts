@@ -34,7 +34,9 @@ export function restoreSettings(onOverview: (overview: Overview) => void, onSave
   input.step = '1';
   input.required = true;
   input.setAttribute('aria-describedby', `${explanation.id} ${validation.id}`);
-  control.append(toggleLabel, input, el('span', 'muted', 'tabs'));
+  const field = el('div', 'settings-number-field');
+  field.append(input, el('span', 'settings-number-unit', 'tabs'));
+  control.append(toggleLabel, field);
   row.append(text, control);
   element.append(row, feedback);
 

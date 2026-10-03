@@ -40,7 +40,10 @@ function storageSetting(name: string, description: string, id: string, unit: str
   input.required = true;
   input.disabled = true;
   input.setAttribute('aria-describedby', `${explanation.id} ${validation.id}`);
-  control.append(input, el('span', 'muted', unit));
+  // show the unit inside the field like the dropdown arrow
+  const field = el('div', 'settings-number-field');
+  field.append(input, el('span', 'settings-number-unit', unit));
+  control.append(field);
   row.append(text, control);
   return { row, input, control, validation };
 }
