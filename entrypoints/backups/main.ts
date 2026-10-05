@@ -1,5 +1,6 @@
 import { timestamp } from '../../src/ui/dates';
-import { errorMessage, type Collection, type HistoryRange, type HistorySort, type Operation, type Overview, type Snapshot, type Summary, type TabMatch } from '../../src/model';
+import { errorMessage, type ChangeCounts, type ClosedTabChange, type Collection, type HistoryRange, type HistorySort, type Operation, type Overview, type SearchField, type Snapshot, type Summary, type TabMatch, type TabSearchField } from '../../src/model';
+import { changeCounts } from '../../src/changes';
 import { compareHistory, parseHistorySort, parseSearchFields, SEARCH_FIELDS } from '../../src/history';
 import { exportArchiveFile, readArchiveFile } from '../../src/archive-file';
 import { Repository } from '../../src/database';
@@ -20,6 +21,8 @@ import { createSearchFields } from '../../src/ui/search-fields';
 import { createTabSearch } from '../../src/ui/tab-search';
 import { createTagEditor } from '../../src/ui/tag-editor';
 import { favicon } from '../../src/ui/favicon';
+import { displayUrl, siteLabel } from '../../src/ui/site-label';
+import { markMatches, type SearchHighlight } from '../../src/ui/highlight';
 import { setTooltip } from '../../src/ui/tooltip';
 import { HISTORY_INITIAL_LIMIT, HISTORY_PAGE_LIMIT, SESSION_NAME_LIMIT } from '../../src/protocol';
 import { privacyLink, requirePrivacyChoice } from '../../src/ui/privacy';
@@ -127,7 +130,7 @@ function historyPanel(collection: Collection)
   list.append(content);
   element.append(list, more);
   const items: Summary[] = [];
-  const filter: { loadedRange: HistoryRange | null; loadedTabUrl: string | null } = { loadedRange: null, loadedTabUrl: null };
+  const filter: { loadedRange: HistoryRange | null; loadedTabUrl: string | null; loadedSearch: SearchHighlight<SearchField> | null } = { loadedRange: null, loadedTabUrl: null, loadedSearch: null };
   return { element, list, content, header, toolbar, sortButtons, updateSort, sort, loadedSort: sort, rememberSort: false, count, usage, dateFeedback, rows, more, collection, query: '', tag: null as string | null, items, ...filter, generation: 0, sessionRows: new Map<string, ReturnType<typeof row>>() };
 }
 
@@ -337,42 +340,91 @@ function filterByTab(match: TabMatch | null): void
   void Promise.all(panels.map(panel => loadHistory(panel, true))).catch(showError);
 }
 
-function tabLabel(text: string, url: string | null): HTMLElement
+function tabLabel(text: string, url: string | null, search?: SearchHighlight<TabSearchField>): HTMLElement
 {
   const label = el('div', 'tab-label');
-  const title = el('span', 'tab-title', text || url || 'Unavailable tab');
+  const name = text || url || 'Unavailable tab';
+  let title: HTMLElement;
   let open: HTMLAnchorElement | HTMLButtonElement;
   let openLabel: string;
   // allow individual navigation for the same URL schemes supported by restoration
   if (url !== null && fileUrl(url)) {
-    const file = button('', icons.ArrowUpRight, 'tab-open file-open');
-    file.disabled = !fileAccess;
-    openLabel = 'Open local file in new tab';
-    file.addEventListener('click', () => {
+    const openFile = () => {
       void (async () => {
         await updateFileAccess();
         if (!fileAccess) throw new Error(FILE_ACCESS_MESSAGE);
         await chrome.tabs.create({ url });
       })().catch((error: unknown) => feedback.replaceChildren(notice(errorMessage(error))));
-    });
+    };
+    const file = button('', icons.ArrowUpRight, 'tab-open file-open');
+    openLabel = 'Open local file in new tab';
+    // the title opens the file like the site link and follows the same file access state
+    const fileTitle = el('button', 'tab-title tab-title-link file-open', name);
+    fileTitle.type = 'button';
+    for (const control of [file, fileTitle]) {
+      control.disabled = !fileAccess;
+      control.addEventListener('click', openFile);
+    }
     open = file;
+    title = fileTitle;
   } else if (restorableUrl(url)) {
     open = el('a', 'tab-open');
-    open.href = url;
-    open.target = '_blank';
-    open.rel = 'noopener noreferrer';
     openLabel = 'Open in new tab';
     open.append(icon(icons.ArrowUpRight));
+    // the title and the site link both open the saved page
+    const pageTitle = el('a', 'tab-title tab-title-link', name);
+    for (const link of [open, pageTitle]) {
+      link.href = url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+    }
+    title = pageTitle;
   } else {
+    title = el('span', 'tab-title', name);
     open = button('', icons.ArrowUpRight, 'tab-open');
     open.disabled = true;
     openLabel = url ? 'This URL cannot be opened from a saved session' : 'No saved URL is available';
   }
   open.setAttribute('aria-label', openLabel);
-  setTooltip(open, openLabel);
-  open.append(el('span', 'tab-url', url ?? 'URL unavailable'));
-  label.append(favicon(url), title, open);
+  // open row tooltips above so moving down the list keeps the next tab visible
+  setTooltip(open, openLabel, { placement: 'above' });
+  if (url !== null) setTooltip(title, url, { placement: 'above' });
+  const address = el('span', 'tab-url', url === null ? 'URL unavailable' : search ? displayUrl(url) : siteLabel(url));
+  open.prepend(address);
+  if (!search) {
+    // keep the row on one line with the site after the title and the full address on hover
+    label.append(favicon(url), title, open);
+    return label;
+  }
+  // list search results with the address below the title and mark the words that matched
+  markMatches(title, name, search.fields.includes('title') ? search.words : []);
+  if (url !== null) markMatches(address, displayUrl(url), search.fields.includes('url') ? search.words : []);
+  const lines = el('div', 'tab-lines');
+  lines.append(title, open);
+  label.classList.add('search-label');
+  label.append(favicon(url), lines);
   return label;
+}
+
+// name the session each comparison refers to by the panel it is shown in
+function previousBackup(item: Pick<Summary, 'savedAt'>): string
+{
+  return `the previous ${item.savedAt === undefined ? 'automatic' : 'manual'} backup`;
+}
+
+function closedTabRow(tab: Omit<ClosedTabChange, 'after'>): HTMLElement
+{
+  // show tabs missing from the previous session without making them part of the restorable session
+  const item = el('li', 'tab-row tab-closed');
+  item.append(tabLabel(tab.title, tab.url), el('span', 'visually-hidden', 'Closed'));
+  return item;
+}
+
+function changeLegend(snapshot: Snapshot): HTMLElement
+{
+  const legend = el('p', 'change-legend muted', `Compared to ${previousBackup(snapshot)}`);
+  legend.append(el('span', 'change-key change-key-opened', 'opened'), el('span', 'change-key change-key-closed', 'closed'));
+  return legend;
 }
 
 function preview(snapshot: Snapshot): HTMLElement
@@ -383,6 +435,9 @@ function preview(snapshot: Snapshot): HTMLElement
     message.hidden = fileAccess;
     content.append(message);
   }
+  const changes = snapshot.changes;
+  const counts = changes ? changeCounts(changes) : null;
+  if (counts && (counts.opened || counts.closed)) content.append(changeLegend(snapshot));
   for (const [index, window] of snapshot.windows.entries()) {
     const section = el('section', 'window-preview');
     const heading = el('h3', 'window-heading');
@@ -398,10 +453,18 @@ function preview(snapshot: Snapshot): HTMLElement
     heading.append(restore);
     section.append(heading);
     const tabs = el('ul', 'tab-list');
-    for (const tab of window.tabs) {
+    const opened = new Set(changes?.opened[index] ?? []);
+    // place closed tabs after the open tab that preceded them in the previous backup
+    const closed = Map.groupBy(changes?.closed[index] ?? [], tab => tab.after);
+    for (const tab of closed.get(-1) ?? []) tabs.append(closedTabRow(tab));
+    for (const [tabIndex, tab] of window.tabs.entries()) {
       const item = el('li', 'tab-row');
       const label = tabLabel(tab.title, tab.url);
       item.append(label);
+      if (opened.has(tabIndex)) {
+        item.classList.add('tab-opened');
+        item.append(el('span', 'visually-hidden', 'Opened'));
+      }
       if (tab.pinned) item.append(el('span', 'badge', 'Pinned'));
       if (tab.group !== null) {
         const group = window.groups[tab.group];
@@ -413,11 +476,51 @@ function preview(snapshot: Snapshot): HTMLElement
         item.append(badge);
       } else if (!restorableUrl(tab.url)) item.append(el('span', 'badge unsupported', 'Will be skipped'));
       tabs.append(item);
+      for (const closedTab of closed.get(tabIndex) ?? []) tabs.append(closedTabRow(closedTab));
     }
     section.append(tabs);
     content.append(section);
   }
+  // list windows whose pages are all gone after the windows that can be restored
+  for (const window of changes?.closedWindows ?? []) {
+    const section = el('section', 'window-preview window-closed');
+    const heading = el('h3', 'window-heading');
+    heading.append(icon(icons.Monitor), document.createTextNode('Closed window'), el('span', 'muted', plural(window.length, 'tab')));
+    const tabs = el('ul', 'tab-list');
+    tabs.append(...window.map(closedTabRow));
+    section.append(heading, tabs);
+    content.append(section);
+  }
   return content;
+}
+
+// 20 steps of 4px so each step shows 5% of the tabs involved
+const CHANGE_BAR_STEPS = 20;
+const CHANGE_BAR_STEP_PX = 4;
+
+function changeStrip(counts: ChangeCounts, item: Pick<Summary, 'tabCount' | 'savedAt'>): HTMLElement | null
+{
+  if (!counts.opened && !counts.closed) return null;
+  // scale the bar to every tab involved so a closed window stands out from a single tab
+  const total = Math.max(1, item.tabCount + counts.closed);
+  const strip = el('span', 'change-strip');
+  const bar = el('span', 'change-bar');
+  const text = el('span', 'change-text');
+  let free = CHANGE_BAR_STEPS;
+  for (const [kind, count, sign] of [['opened', counts.opened, '+'], ['closed', counts.closed, '−']] as const) {
+    if (!count) continue;
+    // round up to whole steps so every change stays visible and keep one step for closed tabs
+    const reserved = kind === 'opened' && counts.closed ? 1 : 0;
+    const steps = Math.min(free - reserved, Math.max(1, Math.ceil(count * CHANGE_BAR_STEPS / total)));
+    free -= steps;
+    const part = el('span', `change-part change-part-${kind}`);
+    part.style.width = `${steps * CHANGE_BAR_STEP_PX}px`;
+    bar.append(part);
+    text.append(el('span', `change-count-${kind}`, `${sign}${count}`));
+  }
+  strip.append(bar, text);
+  setTooltip(strip, `${plural(counts.opened, 'tab')} opened and ${plural(counts.closed, 'tab')} closed compared to ${previousBackup(item)}`, { boldNumbers: true });
+  return strip;
 }
 
 function updateSummary(summary: Summary): void
@@ -725,10 +828,11 @@ function deleteSession(item: Summary, trigger: HTMLButtonElement): void
   }
 }
 
-function tagChip(tag: string): HTMLButtonElement
+function tagChip(tag: string, words: readonly string[]): HTMLButtonElement
 {
-  const chip = el('button', 'tag-chip', tag);
+  const chip = el('button', 'tag-chip');
   chip.type = 'button';
+  markMatches(chip, tag, words);
   setTooltip(chip, 'Search saved sessions for this tag');
   // filter by this exact tag without toggling the session row even when tags were excluded from the search
   chip.addEventListener('click', event => {
@@ -739,7 +843,7 @@ function tagChip(tag: string): HTMLButtonElement
   return chip;
 }
 
-function row(item: Summary)
+function row(item: Summary, highlight: () => SearchHighlight<SearchField> | null)
 {
   const wrapper = el('article', 'backup-row');
   const details = el('details');
@@ -752,26 +856,52 @@ function row(item: Summary)
   const number = el('span', 'backup-number', `#${item.number}`);
   const counts = el('span', 'muted', `${plural(item.windowCount, 'window')} · ${plural(item.tabCount, 'tab')}`);
   const tags = el('div', 'backup-tags');
+  const countRow = el('div', 'backup-counts');
+  let renderedName = '';
   let renderedTags = '';
+  let renderedChanges: string | null = null;
+  let strip: HTMLElement | null = null;
+  let snapshot: Snapshot | undefined;
+  let rendered = false;
+  let previewVersion = 0;
   function update(value: Summary): void
   {
     item = value;
     // update labels while keeping timestamps and row structure in place
+    // mark the words of the loaded session search in the searched name and tags
+    const search = highlight();
+    const nameWords = search?.fields.includes('name') ? search.words : [];
+    const tagWords = search?.fields.includes('tags') ? search.words : [];
     const name = item.name ?? 'Unnamed session';
-    if (title.textContent !== name) title.textContent = name;
+    const nameKey = JSON.stringify([name, nameWords]);
+    if (renderedName !== nameKey) {
+      renderedName = nameKey;
+      markMatches(title, name, nameWords);
+    }
     const sessionNumber = `#${item.number}`;
     if (number.textContent !== sessionNumber) number.textContent = sessionNumber;
     rename.setAttribute('aria-label', `Rename session ${sessionNumber}`);
     // rebuild tags only when they change
     const sessionTags = item.tags ?? [];
-    if (renderedTags !== sessionTags.join('\n')) {
-      renderedTags = sessionTags.join('\n');
-      tags.replaceChildren(...sessionTags.map(tagChip));
+    const tagKey = JSON.stringify([sessionTags, tagWords]);
+    if (renderedTags !== tagKey) {
+      renderedTags = tagKey;
+      tags.replaceChildren(...sessionTags.map(tag => tagChip(tag, tagWords)));
     }
     tags.hidden = !sessionTags.length;
+    // follow comparisons that changed after captures, keeps, imports, or deletions
+    const changes = JSON.stringify([item.changeCounts ?? null, item.savedAt === undefined]);
+    if (renderedChanges === changes) return;
+    const outdated = renderedChanges !== null;
+    renderedChanges = changes;
+    strip?.remove();
+    strip = item.changeCounts ? changeStrip(item.changeCounts, item) : null;
+    if (strip) countRow.append(strip);
+    if (outdated) resetPreview();
   }
   nameRow.append(title);
-  label.append(nameRow, counts);
+  countRow.append(counts);
+  label.append(nameRow, countRow);
   summary.append(icon(icons.ChevronDown), number, label, date);
   details.append(summary);
   // show session actions as icons with short accessible names and descriptive shared tooltips
@@ -803,26 +933,43 @@ function row(item: Summary)
   remove.addEventListener('click', () => deleteSession(item, remove));
   actions.append(exportSession, remove, restore);
   wrapper.append(details, actions);
-  let snapshot: Snapshot | undefined;
   async function load(): Promise<Snapshot>
   {
     if (snapshot) return snapshot;
+    const version = previewVersion;
     const data = await request({ kind: 'snapshot', id: item.id });
     if (data.kind !== 'snapshot') throw new Error('Unexpected backup response.');
-    snapshot = data.snapshot;
-    return snapshot;
+    // cache only responses requested after the latest comparison change
+    if (version === previewVersion) snapshot = data.snapshot;
+    return data.snapshot;
   }
-  let rendered = false;
-  details.addEventListener('toggle', () =>
+  function showPreview(): void
   {
-    if (details.open && !rendered) {
-      rendered = true;
-      void load().then(value => {
-        if (!details.isConnected) return;
-        details.append(preview(value));
-      }, (error: unknown) => { rendered = false; details.append(notice(errorMessage(error))); });
+    if (!details.open || rendered) return;
+    rendered = true;
+    const version = previewVersion;
+    void load().then(value => {
+      if (!details.isConnected || version !== previewVersion) return;
+      details.append(preview(value));
+    }, (error: unknown) => {
+      if (version !== previewVersion) return;
+      rendered = false;
+      details.append(notice(errorMessage(error)));
+    });
+  }
+  function resetPreview(): void
+  {
+    // reload the session so an open preview shows the new comparison
+    previewVersion++;
+    snapshot = undefined;
+    rendered = false;
+    for (const content of details.querySelectorAll('.snapshot-preview')) {
+      for (const button of content.querySelectorAll<HTMLButtonElement>('.window-restore')) restoreButtons.delete(button);
+      content.remove();
     }
-  });
+    showPreview();
+  }
+  details.addEventListener('toggle', showPreview);
   restore.addEventListener('click', () =>
   {
     void confirmRestore(load, restore).catch((error: unknown) => feedback.replaceChildren(notice(errorMessage(error))));
@@ -851,7 +998,7 @@ function renderHistory(panel: ReturnType<typeof historyPanel>): void
   for (const item of items) {
     let saved = sessionRows.get(item.id);
     if (!saved) {
-      saved = row(item);
+      saved = row(item, () => panel.loadedSearch);
       sessionRows.set(item.id, saved);
     } else saved.update(item);
     if (saved.element === next) next = next.nextElementSibling;
@@ -884,7 +1031,8 @@ async function loadHistory(panel: ReturnType<typeof historyPanel>, reset: boolea
   panel.dateFeedback.hidden = !rangeChanged;
   if (rangeChanged) panel.dateFeedback.replaceChildren(el('p', 'muted', 'Loading backups…'));
   try {
-    const data = await request({ kind: 'history', before: last ? { capturedAt: last.capturedAt, number: last.number, id: last.id } : null, collection: panel.collection, query, fields: searchFields.fields(), ...(tag === null ? {} : { tag }), sort, ...dateFilter });
+    const fields = searchFields.fields();
+    const data = await request({ kind: 'history', before: last ? { capturedAt: last.capturedAt, number: last.number, id: last.id } : null, collection: panel.collection, query, fields, ...(tag === null ? {} : { tag }), sort, ...dateFilter });
     if (generation !== panel.generation) return;
     if (data.kind !== 'history') throw new Error('Unexpected history response.');
     panel.count.textContent = String(data.count);
@@ -899,7 +1047,7 @@ async function loadHistory(panel: ReturnType<typeof historyPanel>, reset: boolea
       const lastVisible = preserveLoaded ? items.at(-1) : items.findLast(item => sessionRows.get(item.id)?.details.open);
       const end = loaded.at(-1);
       if (!lastVisible || !end || compareHistory(end, lastVisible, sort) >= 0) break;
-      const older = await request({ kind: 'history', before: { capturedAt: end.capturedAt, number: end.number, id: end.id }, collection: panel.collection, query, fields: searchFields.fields(), ...(tag === null ? {} : { tag }), sort, ...dateFilter });
+      const older = await request({ kind: 'history', before: { capturedAt: end.capturedAt, number: end.number, id: end.id }, collection: panel.collection, query, fields, ...(tag === null ? {} : { tag }), sort, ...dateFilter });
       if (generation !== panel.generation) return;
       if (older.kind !== 'history') throw new Error('Unexpected history response.');
       page = older.items;
@@ -910,6 +1058,8 @@ async function loadHistory(panel: ReturnType<typeof historyPanel>, reset: boolea
     else panel.items.push(...loaded);
     panel.loadedRange = range;
     panel.loadedTabUrl = tabUrl;
+    // split the query into words like the stored session search
+    panel.loadedSearch = { words: query.toLocaleLowerCase().split(/\s+/).filter(word => word.length > 0), fields };
     panel.dateFeedback.hidden = true;
     renderHistory(panel);
     updateDialogButtons();

@@ -1,5 +1,6 @@
 import type { GroupColor, SavedTab, SavedWindow, Session, Snapshot, StoredSnapshot, StoredTab, StoredWindow, Summary } from './model';
 import { placeholderTarget } from './placeholder';
+import { changeCounts } from './changes';
 
 export type CaptureTab = { index: number; url?: string; pendingUrl?: string; title?: string; pinned: boolean; groupId: number };
 export type CaptureWindow = { id?: number; type?: string; incognito: boolean; tabs?: CaptureTab[] };
@@ -52,12 +53,14 @@ export function canonicalTab(tab: SavedTab): string
 
 export function encodeSnapshot(snapshot: Snapshot, tabIds: ReadonlyMap<string, number>): StoredSnapshot
 {
-  const windows = snapshot.windows.map(window => ({ ...window, tabs: window.tabs.map(tab => {
+  // comparisons are computed from stored sessions after encoding
+  const { changes: _, ...session } = snapshot;
+  const windows = session.windows.map(window => ({ ...window, tabs: window.tabs.map(tab => {
     const id = tabIds.get(canonicalTab(tab));
     if (id === undefined) throw new Error('Tab record has not been allocated.');
     return id;
   }) }));
-  return { ...snapshot, windows, tabIds: snapshotTabIds(windows) };
+  return { ...session, windows, tabIds: snapshotTabIds(windows) };
 }
 
 export function snapshotTabIds(windows: readonly StoredWindow[]): number[]
@@ -68,13 +71,28 @@ export function snapshotTabIds(windows: readonly StoredWindow[]): number[]
 
 export function decodeSnapshot(snapshot: StoredSnapshot, tabs: ReadonlyMap<number, StoredTab>): Snapshot
 {
-  const { tabIds, ...stored } = snapshot;
-  // preserve each occurrence and resolve group indices within its saved window
-  return { ...stored, windows: snapshot.windows.map(window => ({ ...window, tabs: window.tabs.map(id => {
+  const { tabIds, changes, ...stored } = snapshot;
+  const record = (id: number) => {
     const tab = tabs.get(id);
     if (!tab) throw new Error('This backup has missing tab data.');
+    return tab;
+  };
+  // preserve each occurrence and resolve group indices within its saved window
+  const windows = snapshot.windows.map(window => ({ ...window, tabs: window.tabs.map(id => {
+    const tab = record(id);
     return { url: tab.url, title: tab.title, pinned: tab.pinned, group: tab.group };
-  }) })) };
+  }) }));
+  if (!changes) return { ...stored, windows };
+  // resolve closed tabs from the shared records of the previous session
+  const closedTab = (id: number) => {
+    const tab = record(id);
+    return { url: tab.url, title: tab.title };
+  };
+  return { ...stored, windows, changes: {
+    previousId: changes.previousId, opened: changes.opened,
+    closed: changes.closed.map(window => window.map(({ tab, after }) => ({ ...closedTab(tab), after }))),
+    closedWindows: changes.closedWindows.map(window => window.map(closedTab)),
+  } };
 }
 
 export function selectWindows(snapshot: Snapshot, windowIndex?: number): SavedWindow[]
@@ -116,5 +134,6 @@ export function summarize(snapshot: Snapshot, bytes: number): Summary
     windowCount: snapshot.windows.length, tabCount: tabs.length,
     supportedCount: tabs.filter(tab => restorableUrl(tab.url, true)).length,
     bytes,
+    ...(snapshot.changes === undefined ? {} : { changeCounts: changeCounts(snapshot.changes) }),
   };
 }

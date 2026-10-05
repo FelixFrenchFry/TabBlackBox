@@ -5,13 +5,19 @@ export type SavedWindow = { tabs: SavedTab[]; groups: SavedGroup[] };
 export type Session = { windows: SavedWindow[] };
 export type Source = 'automatic' | 'manual';
 export type SessionDetails = { tags: string[] };
-export type Snapshot = Session & { id: string; number: number; name: string | null; capturedAt: number; source: Source; savedAt?: number; tags?: string[] };
+// tabs compared by URL with the previous session in the same panel
+export type ClosedTabChange = Pick<SavedTab, 'url' | 'title'> & { after: number };
+export type SessionChanges = { previousId: string; opened: number[][]; closed: ClosedTabChange[][]; closedWindows: Omit<ClosedTabChange, 'after'>[][] };
+// stored comparisons refer to the shared tab records of the previous session instead of copying closed tabs
+export type StoredChanges = Omit<SessionChanges, 'closed' | 'closedWindows'> & { closed: { tab: number; after: number }[][]; closedWindows: number[][] };
+export type ChangeCounts = { previousId: string; opened: number; closed: number };
+export type Snapshot = Session & { id: string; number: number; name: string | null; capturedAt: number; source: Source; savedAt?: number; tags?: string[]; changes?: SessionChanges };
 export type StoredTab = SavedTab & { id: number };
 export type StoredWindow = Omit<SavedWindow, 'tabs'> & { tabs: number[] };
-export type StoredSnapshot = Omit<Snapshot, 'windows'> & { windows: StoredWindow[]; tabIds: number[] };
+export type StoredSnapshot = Omit<Snapshot, 'windows' | 'changes'> & { windows: StoredWindow[]; tabIds: number[]; changes?: StoredChanges };
 export type Collection = 'saved' | 'automatic';
 export type Summary = Pick<Snapshot, 'id' | 'number' | 'name' | 'capturedAt' | 'source' | 'savedAt' | 'tags'> & {
-  windowCount: number; tabCount: number; supportedCount: number; bytes: number;
+  windowCount: number; tabCount: number; supportedCount: number; bytes: number; changeCounts?: ChangeCounts;
 };
 export type TabCountPoint = Pick<Summary, 'id' | 'number' | 'capturedAt' | 'tabCount' | 'windowCount'> & { collection: Collection };
 export type TabMatch = { url: string; title: string; lastSeen: number; lastSeenNumber: number; lastSeenCollection: Collection; automaticCount: number; savedCount: number };

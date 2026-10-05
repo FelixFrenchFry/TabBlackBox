@@ -6,7 +6,8 @@ import { compareHistory, SEARCH_FIELDS, TAB_SEARCH_FIELDS } from './history';
 import { dayRange } from './calendar';
 import { thinTabCounts } from './chart';
 import { sessionDetails, type Archive, type ArchiveSession } from './archive';
-import { canonicalSession, canonicalTab, decodeSnapshot, encodeSnapshot, snapshotTabIds, summarize } from './session';
+import { canonicalSession, canonicalTab, decodeSnapshot, encodeSnapshot, summarize } from './session';
+import { changedTabIds, compareSessions } from './changes';
 import { DEFAULT_STORAGE_SETTINGS, MB, newestAutomaticId, retentionPlan, retentionRemovals, storageTotals, storedBytes } from './storage';
 
 interface BackupDatabase extends DBSchema {
@@ -21,12 +22,12 @@ const TAB_SEARCH_RECORD_LIMIT = 500;
 
 const initialMetadata = (): Metadata => ({ privacyAcceptedAt: null, automatic: { ...DEFAULT_AUTOMATIC_SETTINGS }, settings: { ...DEFAULT_STORAGE_SETTINGS }, restore: { ...DEFAULT_RESTORE_SETTINGS }, latestId: null, lastSavedAt: null, lastCheckedAt: null, bytes: 0, automaticBytes: 0, savedBytes: 0, count: 0, operation: null, lastTabId: 0, lastSessionNumbers: { automatic: 0, manual: 0 }, historyRevision: 0 });
 
-function matchesSearch(item: Summary, search: string, fields: readonly SearchField[]): boolean
+function matchesSearch(item: Summary, words: readonly string[], fields: readonly SearchField[]): boolean
 {
-  if (!search) return true;
-  // search only the selected parts of each session
-  const texts = [...(fields.includes('name') ? [item.name ?? 'Unnamed session'] : []), ...(fields.includes('tags') ? item.tags ?? [] : [])];
-  return texts.some(text => text.toLocaleLowerCase().includes(search));
+  if (!words.length) return true;
+  // require every word in the selected parts of each session like the tab search
+  const text = [...(fields.includes('name') ? [item.name ?? 'Unnamed session'] : []), ...(fields.includes('tags') ? item.tags ?? [] : [])].join('\n').toLocaleLowerCase();
+  return words.every(word => text.includes(word));
 }
 
 type StorageState = { snapshots: StoredSnapshot[]; tabs: Map<number, StoredTab>; tabIds: Map<string, number> };
@@ -40,7 +41,8 @@ async function readStorage(snapshotStore: { getAll(): Promise<StoredSnapshot[]> 
 
 async function readTabs(snapshots: readonly StoredSnapshot[], read: (id: number) => Promise<StoredTab | undefined>): Promise<Map<number, StoredTab>>
 {
-  const ids = new Set(snapshots.flatMap(snapshot => snapshot.windows.flatMap(window => window.tabs)));
+  // include the records that closed tabs of each comparison refer to
+  const ids = new Set(snapshots.flatMap(snapshot => [...snapshot.windows.flatMap(window => window.tabs), ...changedTabIds(snapshot.changes)]));
   const tabs = new Map<number, StoredTab>();
   await Promise.all([...ids].map(async id => {
     const tab = await read(id);
@@ -65,6 +67,35 @@ function internSnapshot(snapshot: Snapshot, state: StorageState, metadata: Metad
   const stored = encodeSnapshot(snapshot, state.tabIds);
   state.snapshots.push(stored);
   return stored;
+}
+
+function syncChanges(state: StorageState): StoredSnapshot[]
+{
+  // recompute comparisons whose previous session in the same panel changed
+  // comparisons exist only while their previous session keeps the referenced tab records stored
+  const changed: StoredSnapshot[] = [];
+  for (const saved of [false, true]) {
+    const ordered = state.snapshots.filter(snapshot => (snapshot.savedAt !== undefined) === saved).sort((a, b) => compareHistory(a, b, 'date-asc'));
+    for (const [index, snapshot] of ordered.entries()) {
+      const previous = ordered[index - 1];
+      if ((snapshot.changes?.previousId ?? null) === (previous?.id ?? null)) continue;
+      if (previous) snapshot.changes = compareSessions(decodeSnapshot(snapshot, state.tabs), previous, state.tabs);
+      else delete snapshot.changes;
+      changed.push(snapshot);
+    }
+  }
+  return changed;
+}
+
+async function writeChanges(stores: { snapshots: { put(snapshot: StoredSnapshot): Promise<string> }; summaries: { put(summary: Summary): Promise<string> } }, state: StorageState, changed: Iterable<StoredSnapshot>, skip: ReadonlySet<string> = new Set()): Promise<void>
+{
+  // store recomputed comparisons of retained sessions that are not written elsewhere
+  const retained = new Set(state.snapshots);
+  for (const snapshot of new Set(changed)) {
+    if (!retained.has(snapshot) || skip.has(snapshot.id)) continue;
+    await stores.snapshots.put(snapshot);
+    await stores.summaries.put(summarize(decodeSnapshot(snapshot, state.tabs), storedBytes(snapshot)));
+  }
 }
 
 function updateStorage(metadata: Metadata, state: StorageState): void
@@ -98,38 +129,16 @@ export class Repository {
 
   private db(): Promise<IDBPDatabase<BackupDatabase>>
   {
-    this.connection ??= openDB<BackupDatabase>(this.name, 6, {
-      upgrade(db, oldVersion, _newVersion, transaction)
+    this.connection ??= openDB<BackupDatabase>(this.name, 9, {
+      upgrade(db)
       {
-        void (async () => {
-          if (oldVersion < 3) {
-            // replace disposable session data once while retaining existing preferences
-            const previous = oldVersion === 0 ? undefined : await transaction.objectStore('metadata').get('state');
-            for (const store of [...db.objectStoreNames]) db.deleteObjectStore(store);
-            db.createObjectStore('snapshots', { keyPath: 'id' }).createIndex('tabIds', 'tabIds', { multiEntry: true });
-            db.createObjectStore('tabs', { keyPath: 'id' }).createIndex('url', 'url');
-            db.createObjectStore('summaries', { keyPath: 'id' }).createIndex('capturedAt', 'capturedAt');
-            db.createObjectStore('metadata');
-            db.createObjectStore('imports');
-            const metadata = initialMetadata();
-            if (previous) { metadata.automatic = previous.automatic; metadata.settings = previous.settings; }
-            await transaction.objectStore('metadata').put(metadata, 'state');
-            return;
-          }
-          if (oldVersion < 6) db.createObjectStore('imports');
-          if (oldVersion >= 5) return;
-          // add missing indexes to existing sessions and tab records without replacing them
-          const tabs = transaction.objectStore('tabs');
-          if (!tabs.indexNames.contains('url')) tabs.createIndex('url', 'url');
-          const snapshots = transaction.objectStore('snapshots');
-          if (!snapshots.indexNames.contains('tabIds')) snapshots.createIndex('tabIds', 'tabIds', { multiEntry: true });
-          // rebuild tab references so partially indexed databases become consistent
-          for (let cursor = await snapshots.openCursor(); cursor; cursor = await cursor.continue()) {
-            await cursor.update({ ...cursor.value, tabIds: snapshotTabIds(cursor.value.windows) });
-          }
-        })().catch(() => {
-          try { transaction.abort(); } catch { /* failed requests may already have aborted the upgrade */ }
-        });
+        // start every schema version with empty stores instead of migrating development data
+        for (const store of [...db.objectStoreNames]) db.deleteObjectStore(store);
+        db.createObjectStore('snapshots', { keyPath: 'id' }).createIndex('tabIds', 'tabIds', { multiEntry: true });
+        db.createObjectStore('tabs', { keyPath: 'id' }).createIndex('url', 'url');
+        db.createObjectStore('summaries', { keyPath: 'id' }).createIndex('capturedAt', 'capturedAt');
+        db.createObjectStore('metadata');
+        db.createObjectStore('imports');
       },
       blocking: () => { void this.close(); },
       terminated: () => { this.connection = null; },
@@ -146,9 +155,7 @@ export class Repository {
 
   async metadata(): Promise<Metadata>
   {
-    const stored = await (await this.db()).get('metadata', 'state');
-    // older records receive defaults without changing their saved sessions
-    return stored ? { ...stored, privacyAcceptedAt: stored.privacyAcceptedAt ?? null, restore: stored.restore ?? { ...DEFAULT_RESTORE_SETTINGS } } : initialMetadata();
+    return (await (await this.db()).get('metadata', 'state')) ?? initialMetadata();
   }
 
   async acceptPrivacy(automatic: boolean, now: number): Promise<void>
@@ -156,7 +163,7 @@ export class Repository {
     // commit the first choice and capture setting together across open pages
     const tx = (await this.db()).transaction('metadata', 'readwrite');
     const metadata = (await tx.store.get('state')) ?? initialMetadata();
-    if (metadata.privacyAcceptedAt == null) {
+    if (metadata.privacyAcceptedAt === null) {
       metadata.privacyAcceptedAt = now;
       metadata.automatic = { ...metadata.automatic, enabled: automatic, pausedUntil: null };
       await tx.store.put(metadata, 'state');
@@ -202,13 +209,13 @@ export class Repository {
     const result: Summary[] = [];
     let count = 0;
     const bytes = collection === 'automatic' ? metadata.automaticBytes : collection === 'saved' ? metadata.savedBytes : metadata.bytes;
-    const search = query.trim().toLocaleLowerCase();
+    const words = query.toLocaleLowerCase().split(/\s+/).filter(word => word.length > 0);
     if (limit > 0) summaries.sort((a, b) => compareHistory(a, b, sort));
     for (const item of summaries) {
       const matches = collection === undefined || (item.savedAt !== undefined) === (collection === 'saved');
       if (matches) count++;
       // filter the full collection before paging in the selected order
-      if (matches && result.length < limit && (!range || (item.capturedAt >= range.start && item.capturedAt < range.end)) && matchesSearch(item, search, fields) && (!tag || item.tags?.includes(tag)) &&
+      if (matches && result.length < limit && (!range || (item.capturedAt >= range.start && item.capturedAt < range.end)) && matchesSearch(item, words, fields) && (!tag || item.tags?.includes(tag)) &&
           (!containing || containing.has(item.id)) && (!before || compareHistory(item, before, sort) > 0)) result.push(item);
     }
     await transaction.done;
@@ -338,6 +345,8 @@ export class Repository {
       }
       const state = await readStorage(tx.objectStore('snapshots'), tx.objectStore('tabs'));
       const stored = candidate ? internSnapshot(candidate, state, metadata) : undefined;
+      // compare the candidate before retention so its size counts toward the budget
+      const changed = syncChanges(state);
       // manual saves do not consume the automatic budget or prune its history
       const plan = source === 'manual'
         ? { removeIds: [] }
@@ -352,10 +361,13 @@ export class Repository {
       }
       const removed = new Set(plan.removeIds);
       state.snapshots = state.snapshots.filter(snapshot => !removed.has(snapshot.id));
+      // sessions after removed ones now follow an older session
+      changed.push(...syncChanges(state));
+      await writeChanges({ snapshots: tx.objectStore('snapshots'), summaries: tx.objectStore('summaries') }, state, changed, new Set(stored ? [stored.id] : []));
       await writeTabs(tx.objectStore('tabs'), state, previousLastTabId);
       if (candidate && stored) {
         await tx.objectStore('snapshots').add(stored);
-        await tx.objectStore('summaries').add(summarize(candidate, storedBytes(stored)));
+        await tx.objectStore('summaries').add(summarize(decodeSnapshot(stored, state.tabs), storedBytes(stored)));
         // commit the number with the snapshot so failed or unchanged captures do not consume it
         Object.assign(metadata, { latestId: candidate.id, lastSavedAt: now });
       }
@@ -404,14 +416,17 @@ export class Repository {
         delete snapshot.tags;
         Object.assign(snapshot, sessionDetails(details));
       }
+      // a kept session leaves the automatic panel and joins the saved panel at its capture time
+      const changed = syncChanges(state);
       const summary = summarize(decodeSnapshot(snapshot, state.tabs), storedBytes(snapshot));
       updateStorage(metadata, state);
       if (snapshot.savedAt === undefined && summary.bytes > previous.bytes) {
         if (metadata.automaticBytes > (this.budget ?? metadata.settings.maxStorageMB * MB)) throw new Error('There is not enough backup storage for this session. Shorten the name or increase the storage limit.');
       }
-      if (previous.name !== name || previous.savedAt !== snapshot.savedAt || JSON.stringify(previous.tags) !== JSON.stringify(summary.tags)) {
+      if (previous.name !== name || previous.savedAt !== snapshot.savedAt || JSON.stringify(previous.tags) !== JSON.stringify(summary.tags) || changed.length) {
         await tx.objectStore('snapshots').put(snapshot);
         await tx.objectStore('summaries').put(summary);
+        await writeChanges({ snapshots: tx.objectStore('snapshots'), summaries: tx.objectStore('summaries') }, state, changed, new Set([snapshot.id]));
         metadata.historyRevision++;
         await tx.objectStore('metadata').put(metadata, 'state');
       }
@@ -440,6 +455,8 @@ export class Repository {
       state.snapshots = state.snapshots.filter(snapshot => snapshot.id !== id);
       await tx.objectStore('snapshots').delete(id);
       await tx.objectStore('summaries').delete(id);
+      // the next session in the same panel now follows the deleted session's predecessor
+      await writeChanges({ snapshots: tx.objectStore('snapshots'), summaries: tx.objectStore('summaries') }, state, syncChanges(state));
       await writeTabs(tx.objectStore('tabs'), state, metadata.lastTabId);
       updateStorage(metadata, state);
       metadata.historyRevision++;
@@ -533,16 +550,23 @@ export class Repository {
       const previousLastTabId = metadata.lastTabId;
       const state = await readStorage(tx.objectStore('snapshots'), tx.objectStore('tabs'));
       let count = 0;
+      const imported: StoredSnapshot[] = [];
       for (let cursor = await tx.objectStore('imports').openCursor(); cursor; cursor = await cursor.continue()) {
         signal?.throwIfAborted();
         const number = nextSessionNumber(metadata, 'manual');
         const snapshot: Snapshot = { ...cursor.value, id: crypto.randomUUID(), number, savedAt: now };
-        const stored = internSnapshot(snapshot, state, metadata);
-        await tx.objectStore('snapshots').add(stored);
-        await tx.objectStore('summaries').add(summarize(snapshot, storedBytes(stored)));
+        imported.push(internSnapshot(snapshot, state, metadata));
         progress?.(++count);
         signal?.throwIfAborted();
       }
+      // imported sessions join the saved panel at their capture times
+      const changed = syncChanges(state);
+      for (const stored of imported) {
+        await tx.objectStore('snapshots').add(stored);
+        await tx.objectStore('summaries').add(summarize(decodeSnapshot(stored, state.tabs), storedBytes(stored)));
+        signal?.throwIfAborted();
+      }
+      await writeChanges({ snapshots: tx.objectStore('snapshots'), summaries: tx.objectStore('summaries') }, state, changed, new Set(imported.map(stored => stored.id)));
       await writeTabs(tx.objectStore('tabs'), state, previousLastTabId);
       updateStorage(metadata, state);
       metadata.historyRevision++;

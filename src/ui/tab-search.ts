@@ -1,11 +1,12 @@
 import { parseTabSearchFields, TAB_SEARCH_FIELDS } from '../history';
-import { errorMessage, type TabMatch } from '../model';
+import { errorMessage, type TabMatch, type TabSearchField } from '../model';
 import { TAB_SEARCH_INITIAL_LIMIT, TAB_SEARCH_PAGE_LIMIT, TAB_URL_LIMIT } from '../protocol';
 import { timestamp } from './dates';
 import { createSearchFields } from './search-fields';
+import { fitMatches, type SearchHighlight } from './highlight';
 import { button, el, icons, notice, request } from './shared';
 
-export function createTabSearch(options: { label: (title: string, url: string) => HTMLElement; show: (match: TabMatch) => void })
+export function createTabSearch(options: { label: (title: string, url: string, search: SearchHighlight<TabSearchField>) => HTMLElement; show: (match: TabMatch) => void })
 {
   const element = el('section', 'tab-search');
   element.setAttribute('aria-label', 'Search tabs in all backups');
@@ -28,7 +29,7 @@ export function createTabSearch(options: { label: (title: string, url: string) =
   group.append(fields.element, input);
   element.append(group, results);
 
-  function result(match: TabMatch): HTMLElement
+  function result(match: TabMatch, search: SearchHighlight<TabSearchField>): HTMLElement
   {
     // match session preview rows with the title and link on the left and history details on the right
     const item = el('li', 'tab-row tab-search-result');
@@ -44,7 +45,7 @@ export function createTabSearch(options: { label: (title: string, url: string) =
       dismiss();
       options.show(match);
     });
-    item.append(options.label(match.title, match.url), seen, show);
+    item.append(options.label(match.title, match.url, search), seen, show);
     return item;
   }
 
@@ -62,11 +63,14 @@ export function createTabSearch(options: { label: (title: string, url: string) =
     }
     try {
       // request every loaded result again so the list stays ordered as new backups arrive
-      const data = await request({ kind: 'tab-search', query, limit, fields: fields.fields() });
+      const searched = fields.fields();
+      const data = await request({ kind: 'tab-search', query, limit, fields: searched });
       if (current !== generation) return;
       if (data.kind !== 'tab-search') throw new Error('Unexpected search response.');
       const list = el('ul', 'tab-search-list');
-      list.append(...data.items.map(result));
+      // split the query into words like the stored tab search
+      const words = query.toLocaleLowerCase().split(/\s+/).filter(word => word.length > 0);
+      list.append(...data.items.map(match => result(match, { words, fields: searched })));
       results.replaceChildren(data.items.length ? list : el('p', 'muted tab-search-note', data.tooBroad ? 'Too many tabs match. Add more words.' : 'No tabs match your search'));
       results.hidden = false;
       shown = data.items.length;
@@ -81,6 +85,7 @@ export function createTabSearch(options: { label: (title: string, url: string) =
         footer.append(el('p', 'muted', `Showing the ${shown} most recently seen tabs. Add more words to narrow your search.`), more);
         results.append(footer);
       }
+      fitMatches(results);
     } catch (error) {
       if (current !== generation) return;
       results.replaceChildren(notice(errorMessage(error)));
@@ -96,6 +101,8 @@ export function createTabSearch(options: { label: (title: string, url: string) =
     results.hidden = true;
   }
 
+  // keep marked matches visible when the dropdown width changes
+  new ResizeObserver(() => { if (!results.hidden) fitMatches(results); }).observe(results);
   // close the result dropdown on Escape or outside interaction and reopen it on focus
   element.addEventListener('keydown', event => { if (event.key === 'Escape') dismiss(); });
   document.addEventListener('pointerdown', event => { if (!(event.target instanceof Node && element.contains(event.target))) dismiss(); });

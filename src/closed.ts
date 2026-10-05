@@ -20,3 +20,13 @@ export function closedTabs(sessions: readonly RecentSession[], ownOrigin: string
   }
   return tabs.slice(0, limit);
 }
+
+// show how long ago a tab was closed in the narrow popup list
+export function closedAgo(closedAt: number, now = Date.now()): string
+{
+  const minutes = Math.max(0, Math.floor((now - closedAt) / 60_000));
+  if (minutes < 1) return 'now';
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  return hours < 24 ? `${hours} h` : `${Math.floor(hours / 24)} d`;
+}

@@ -95,6 +95,15 @@ export function retentionPlan(records: readonly StoredSnapshot[], tabs: Readonly
       references.set(id, (references.get(id) ?? 0) + 1);
     }
   }
+  // the oldest kept backup has no previous automatic backup after pruning and loses its comparison
+  const dropComparison = (snapshot: StoredSnapshot | undefined) => {
+    if (!snapshot?.changes) return;
+    const { changes: _, ...uncompared } = snapshot;
+    const size = storedBytes(uncompared);
+    bytes -= (snapshotBytes.get(snapshot.id) ?? 0) - size;
+    snapshotBytes.set(snapshot.id, size);
+  };
+  dropComparison(kept.at(-1));
   // decrement temporary references so each removal scans only its own tabs
   while (bytes > budget && kept.length > 1) {
     const oldest = kept.pop();
@@ -106,6 +115,7 @@ export function retentionPlan(records: readonly StoredSnapshot[], tabs: Readonly
       references.set(id, count);
       if (count === 0) bytes -= tabBytes.get(id) ?? 0;
     }
+    dropComparison(kept.at(-1));
   }
   if (bytes > budget) throw new StorageLimitExceededError();
   return { removeIds: records.filter(item => removeIds.has(item.id)).map(item => item.id) };

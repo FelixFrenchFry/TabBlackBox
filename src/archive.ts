@@ -87,7 +87,7 @@ export function parseArchiveSession(value: unknown): ArchiveSession
   const session = record(value);
   if (!Array.isArray(session.windows) || !session.windows.length || typeof session.capturedAt !== 'number' || !Number.isSafeInteger(session.capturedAt) || session.capturedAt < 0 || session.capturedAt > 8_640_000_000_000_000 ||
       (session.source !== 'automatic' && session.source !== 'manual')) throw new Error('Invalid session in archive.');
-  // accept archives written before tags existed
+  // untagged sessions omit their tags in exported archives
   const details = parseSessionDetails({ tags: session.tags ?? [] });
   return { windows: session.windows.map(parseWindow), name: parseSessionName(session.name), capturedAt: session.capturedAt, source: session.source, ...sessionDetails(details) };
 }
