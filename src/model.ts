@@ -37,6 +37,7 @@ export type AutomaticUpdate =
   | { kind: 'resume' };
 export type RestoreSettings = { unloadBackgroundTabs: boolean; unloadThreshold: number };
 export type Metadata = {
+  privacyAcceptedAt: number | null;
   automatic: AutomaticSettings;
   settings: StorageSettings;
   restore: RestoreSettings;

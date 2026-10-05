@@ -1,4 +1,5 @@
 import type { GroupColor, SavedTab, SavedWindow, Session, Snapshot, StoredSnapshot, StoredTab, StoredWindow, Summary } from './model';
+import { placeholderTarget } from './placeholder';
 
 export type CaptureTab = { index: number; url?: string; pendingUrl?: string; title?: string; pinned: boolean; groupId: number };
 export type CaptureWindow = { id?: number; type?: string; incognito: boolean; tabs?: CaptureTab[] };
@@ -13,8 +14,12 @@ export function normalizeSession(windows: CaptureWindow[], groups: CaptureGroup[
     const result: SavedWindow = { tabs: [], groups: [] };
     const groupIds = new Map<number, number>();
     for (const tab of [...window.tabs].sort((a, b) => a.index - b.index)) {
-      const url = tab.pendingUrl || tab.url || null;
-      if (url?.startsWith(ownOrigin)) continue;
+      let url = tab.pendingUrl || tab.url || null;
+      let title = tab.title ?? '';
+      // record placeholder tabs as their saved page and skip other own pages
+      const target = placeholderTarget(url, ownOrigin);
+      if (target) ({ url, title } = target);
+      else if (url?.startsWith(ownOrigin)) continue;
       let group: number | null = null;
       if (tab.groupId !== -1) {
         const metadata = groups.find(item => item.id === tab.groupId && item.windowId === window.id);
@@ -25,7 +30,7 @@ export function normalizeSession(windows: CaptureWindow[], groups: CaptureGroup[
           result.groups.push({ name: metadata.title ?? '', color: metadata.color, collapsed: metadata.collapsed });
         }
       }
-      result.tabs.push({ url, title: tab.title ?? '', pinned: tab.pinned, group });
+      result.tabs.push({ url, title, pinned: tab.pinned, group });
     }
     if (result.tabs.length) saved.push(result);
   }

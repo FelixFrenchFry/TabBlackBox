@@ -19,7 +19,7 @@ interface BackupDatabase extends DBSchema {
 
 const TAB_SEARCH_RECORD_LIMIT = 500;
 
-const initialMetadata = (): Metadata => ({ automatic: { ...DEFAULT_AUTOMATIC_SETTINGS }, settings: { ...DEFAULT_STORAGE_SETTINGS }, restore: { ...DEFAULT_RESTORE_SETTINGS }, latestId: null, lastSavedAt: null, lastCheckedAt: null, bytes: 0, automaticBytes: 0, savedBytes: 0, count: 0, operation: null, lastTabId: 0, lastSessionNumbers: { automatic: 0, manual: 0 }, historyRevision: 0 });
+const initialMetadata = (): Metadata => ({ privacyAcceptedAt: null, automatic: { ...DEFAULT_AUTOMATIC_SETTINGS }, settings: { ...DEFAULT_STORAGE_SETTINGS }, restore: { ...DEFAULT_RESTORE_SETTINGS }, latestId: null, lastSavedAt: null, lastCheckedAt: null, bytes: 0, automaticBytes: 0, savedBytes: 0, count: 0, operation: null, lastTabId: 0, lastSessionNumbers: { automatic: 0, manual: 0 }, historyRevision: 0 });
 
 function matchesSearch(item: Summary, search: string, fields: readonly SearchField[]): boolean
 {
@@ -147,8 +147,21 @@ export class Repository {
   async metadata(): Promise<Metadata>
   {
     const stored = await (await this.db()).get('metadata', 'state');
-    // records saved before restore settings existed receive the defaults
-    return stored ? { ...stored, restore: stored.restore ?? { ...DEFAULT_RESTORE_SETTINGS } } : initialMetadata();
+    // older records receive defaults without changing their saved sessions
+    return stored ? { ...stored, privacyAcceptedAt: stored.privacyAcceptedAt ?? null, restore: stored.restore ?? { ...DEFAULT_RESTORE_SETTINGS } } : initialMetadata();
+  }
+
+  async acceptPrivacy(automatic: boolean, now: number): Promise<void>
+  {
+    // commit the first choice and capture setting together across open pages
+    const tx = (await this.db()).transaction('metadata', 'readwrite');
+    const metadata = (await tx.store.get('state')) ?? initialMetadata();
+    if (metadata.privacyAcceptedAt == null) {
+      metadata.privacyAcceptedAt = now;
+      metadata.automatic = { ...metadata.automatic, enabled: automatic, pausedUntil: null };
+      await tx.store.put(metadata, 'state');
+    }
+    await tx.done;
   }
 
   async get(id: string): Promise<Snapshot>

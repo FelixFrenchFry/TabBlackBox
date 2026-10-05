@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TabBlackBox · Privacy</title>
+  <style>
+    :root { color-scheme: light dark; font: 14px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #1f2328; background: #fff; }
+    body { max-width: 720px; margin: 0 auto; padding: 32px 24px 48px; font: inherit; }
+    h1 { margin: 8px 0; font-size: 28px; line-height: 1.2; }
+    h2 { margin: 24px 0 8px; font-size: 18px; }
+    p, ul { margin: 8px 0; }
+    ul { padding-left: 22px; }
+    a { color: #0969da; }
+    .muted { color: #59636e; }
+    .draft { padding: 12px 16px; border: 1px solid #d1d9e0; border-radius: 6px; background: #f6f8fa; }
+    @media (prefers-color-scheme: dark) {
+      :root { color: #f0f6fc; background: #0d1117; }
+      a { color: #4493f8; }
+      .muted { color: #9198a1; }
+      .draft { border-color: #3d444d; background: #151b23; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <p class="muted">TabBlackBox</p>
+    <h1>Privacy</h1>
+    <p class="draft">Draft. Publisher and contact details must be completed before publication.</p>
+    <p class="muted">Effective date: [Effective date] · Publisher: [Publisher name]</p>
+    <p>TabBlackBox saves browser sessions on your device so you can find and restore your tabs. It does not send your saved sessions to the developer. There are no accounts, analytics, advertising or cloud sync.</p>
+
+    <h2>What is saved</h2>
+    <p>TabBlackBox saves tab URLs and titles, window and tab order, and pinned tabs. It also saves group names, colors and collapsed state, backup dates, session names and tags. Settings, interface preferences and your initial backup choice are also stored locally. Imported archives add the session information they contain.</p>
+    <p>TabBlackBox does not read page contents, form entries, cookies or passwords. Full URLs and titles can still contain sensitive information, including access tokens or local file paths. Incognito windows are excluded from capture.</p>
+
+    <h2>When it is saved</h2>
+    <p>Capture starts after your initial choice. Automatic backups save session changes at your chosen interval. New installations use 15 minutes by default. You can change the interval, pause or disable automatic backups, or use manual backups only.</p>
+    <p>The popup separately displays recently closed tabs from Chrome. That list is not saved as a TabBlackBox archive, and Chrome controls its retention.</p>
+
+    <h2>Storage and deletion</h2>
+    <p>Sessions are stored in this browser profile using IndexedDB. Older automatic backups are deleted according to your settings. The default limits are 5,000 backups and 100 MB. By default, automatic backups are not deleted based on how old they are. Saved sessions and the newest recovery backup are protected from automatic deletion.</p>
+    <p>You can delete saved sessions and older backups in the app. To remove all extension data, uninstall TabBlackBox. Exported files are separate copies and must be deleted separately.</p>
+
+    <h2>Exports and security</h2>
+    <p>Local records and exports are not encrypted by TabBlackBox. Anyone who can access an exported file can read it. Keep exports somewhere you trust. We cannot recover lost local data or deleted files.</p>
+    <p>Restoring or opening a saved link visits its destination normally. Website icons are requested through Chrome's favicon API. The browser and destination websites have their own privacy practices.</p>
+
+    <h2>Permissions and use</h2>
+    <p>Tab and group access lets you save and restore sessions. Alarms schedule backups. Unlimited storage supports large backup collections. Favicon access displays website icons. Session access shows recently closed tabs. File URL access lets you reopen local file links when you enable it in Chrome. The extension does not read file contents.</p>
+    <p>TabBlackBox uses information from Google APIs only for its session backup features. This use follows the Limited Use requirements of the <a href="https://developer.chrome.com/docs/webstore/program-policies/user-data-faq">Chrome Web Store User Data Policy</a>.</p>
+
+    <h2>Contact and changes</h2>
+    <p>Questions: [Contact email]. We use information you send us to answer your questions. Avoid sending sensitive session exports.</p>
+    <p>We will update this policy when our data practices change. We will tell you about significant changes before they take effect.</p>
+  </main>
+</body>
+</html>

@@ -22,11 +22,15 @@ import { createTagEditor } from '../../src/ui/tag-editor';
 import { favicon } from '../../src/ui/favicon';
 import { setTooltip } from '../../src/ui/tooltip';
 import { HISTORY_INITIAL_LIMIT, HISTORY_PAGE_LIMIT, SESSION_NAME_LIMIT } from '../../src/protocol';
+import { privacyLink, requirePrivacyChoice } from '../../src/ui/privacy';
 
 const root = setup();
+const privacyReady = requirePrivacyChoice(root);
 const header = el('header', 'app-header');
 const headerInner = el('div', 'header-inner');
-headerInner.append(brand(), el('span', 'local-label', 'Local browser session backups'));
+const headerInfo = el('div', 'header-info');
+headerInfo.append(el('span', 'local-label', 'Local browser session backups.'), privacyLink());
+headerInner.append(brand(), headerInfo);
 header.append(headerInner);
 const nav = el('nav', 'navigation');
 nav.setAttribute('aria-label', 'Main navigation');
@@ -60,7 +64,7 @@ let archiveOperation: AbortController | null = null;
 // cancel page-owned file operations before the document and its database connection disappear
 window.addEventListener('pagehide', () => { archiveOperation?.abort(); void archiveRepository.close(); });
 window.addEventListener('beforeunload', event => { if (archiveOperation) event.preventDefault(); });
-void archiveRepository.clearAbandonedImport().catch(showError);
+void privacyReady.then(() => archiveRepository.clearAbandonedImport()).catch(showError);
 
 function readHistorySort(collection: Collection): HistorySort
 {
@@ -162,7 +166,7 @@ searchGroup.append(searchFields.element, search);
 savedPanel.toolbar.prepend(searchGroup);
 savedPanel.toolbar.append(backup.element, exportAll, importSessions);
 const footer = el('footer', 'history-footer');
-footer.append(icon(icons.HardDrive), el('span', '', 'Backups are stored on this device. Automatic backups are removed as needed. Manual backups stay until deleted explicitly. Export them to keep an external copy.'));
+footer.append(icon(icons.HardDrive), el('span', '', 'Backups stay on this device. Automatic backups are removed as needed. Manual backups stay until deleted explicitly. Export them to keep an external copy.'));
 main.append(heading, status, feedback, calendar.element, tabFilter, ...panels.map(panel => panel.element), footer);
 const settings = createSettingsView(() => toast.show('Settings have been saved'));
 root.append(header, nav, main, statistics.element, settings.element, toast.element);
@@ -1114,5 +1118,7 @@ importFile.addEventListener('change', () => {
     }
   })();
 });
-void refresh('refresh');
-setInterval(() => { if (!document.hidden) void refresh('overview'); }, 1500);
+void privacyReady.then(() => {
+  void refresh('refresh');
+  setInterval(() => { if (!document.hidden) void refresh('overview'); }, 1500);
+});

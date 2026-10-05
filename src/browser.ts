@@ -1,8 +1,8 @@
 import { FILE_ACCESS_MESSAGE, fileUrl, normalizeSession } from './session';
 import type { Session } from './model';
+import { placeholderUrl } from './placeholder';
+import { TAB_URL_LIMIT } from './protocol';
 import type { RestorePort } from './restore';
-
-const UNLOAD_TIMEOUT_MS = 10_000;
 
 export async function scanBrowser(): Promise<Session>
 {
@@ -29,29 +29,14 @@ export const restoreBrowser: RestorePort = {
     return tab.id;
   },
   async pinTab(tabId) { await chrome.tabs.update(tabId, { pinned: true }); },
-  async unloadTab(tabId)
+  async createPlaceholderTab(windowId, url, title, pinned)
   {
-    // let the page finish loading so the unloaded tab keeps its title and icon
-    await new Promise<void>(resolve =>
-    {
-      const finish = () => {
-        clearTimeout(timer);
-        chrome.tabs.onUpdated.removeListener(updated);
-        chrome.tabs.onRemoved.removeListener(removed);
-        resolve();
-      };
-      const updated = (id: number, change: { status?: string }) => { if (id === tabId && change.status === 'complete') finish(); };
-      const removed = (id: number) => { if (id === tabId) finish(); };
-      // unloading proceeds after the timeout when a page never finishes loading
-      const timer = setTimeout(finish, UNLOAD_TIMEOUT_MS);
-      chrome.tabs.onUpdated.addListener(updated);
-      chrome.tabs.onRemoved.addListener(removed);
-      // cover pages that finished loading before the listener was added
-      chrome.tabs.get(tabId).then(tab => { if (tab.status === 'complete') finish(); }, finish);
-    });
-    // discarding can give the tab a new id
-    const discarded = await chrome.tabs.discard(tabId);
-    return discarded?.id ?? tabId;
+    const placeholder = placeholderUrl(chrome.runtime.getURL('/'), url, title);
+    // open directly if encoding makes the placeholder exceed Chrome's URL limit
+    const target = placeholder.length > TAB_URL_LIMIT ? url : placeholder;
+    const tab = await chrome.tabs.create({ windowId, url: target, pinned, active: false });
+    if (tab.id === undefined) throw new Error('Chrome did not return the created tab. Its outcome is uncertain.');
+    return tab.id;
   },
   async groupTabs(windowId, tabIds, group)
   {

@@ -3,8 +3,10 @@ import { setup, brand, button, icon, icons, el, request, createStatusView, notic
 import { createRefreshQueue } from '../../src/ui/refresh-queue';
 import { createBackupButton } from '../../src/ui/backup-button';
 import { createClosedTabs } from '../../src/ui/closed-tabs';
+import { privacyLink, requirePrivacyChoice } from '../../src/ui/privacy';
 
 const root = setup();
+const privacyReady = requirePrivacyChoice(root);
 const header = el('header', 'popup-header');
 const headerActions = el('div', 'popup-header-actions');
 const settings = button('', icons.Settings, 'button icon-button');
@@ -26,7 +28,7 @@ const closedTabs = createClosedTabs(error => { feedback.replaceChildren(notice(e
 actions.append(backup.element, history, closedTabs.element);
 content.append(status, actions, feedback);
 const footer = el('footer', 'popup-footer');
-footer.append(icon(icons.LockKeyhole, 14), el('span', '', 'Backups are stored on this device. No accounts. No cloud.'));
+footer.append(icon(icons.LockKeyhole, 14), el('span', '', 'Backups stay on this device. No accounts. No cloud.'), privacyLink());
 root.append(header, content, footer);
 
 let backingUp = false;
@@ -49,6 +51,8 @@ const refresh = createRefreshQueue(async kind =>
 }, value => { backingUp = value; updateSave(); });
 history.addEventListener('click', () => { void chrome.tabs.create({ url: chrome.runtime.getURL('/backups.html') }); });
 settings.addEventListener('click', () => { void chrome.tabs.create({ url: chrome.runtime.getURL('/backups.html#settings') }); });
-void refresh('refresh');
-void closedTabs.load();
-setInterval(() => { void refresh('overview'); }, 1500);
+void privacyReady.then(() => {
+  void refresh('refresh');
+  void closedTabs.load();
+  setInterval(() => { void refresh('overview'); }, 1500);
+});
