@@ -427,7 +427,32 @@ function changeLegend(snapshot: Snapshot): HTMLElement
   return legend;
 }
 
-function preview(snapshot: Snapshot): HTMLElement
+type PreviewView = 'tabs' | 'changes';
+
+function foldUnchanged(tabs: HTMLElement): { fold: HTMLElement; rows: HTMLElement[] }[]
+{
+  // group consecutive tabs without changes behind a row that shows them again
+  const runs: HTMLElement[][] = [];
+  let run: HTMLElement[] | null = null;
+  for (const item of tabs.querySelectorAll<HTMLElement>(':scope > .tab-row')) {
+    if (item.matches('.tab-opened, .tab-closed')) { run = null; continue; }
+    if (!run) runs.push(run = []);
+    run.push(item);
+  }
+  return runs.map(rows => {
+    const fold = el('li', 'tab-row tab-fold');
+    const expand = button(plural(rows.length, 'unchanged tab'), icons.UnfoldVertical, 'tab-fold-button');
+    expand.addEventListener('click', () => {
+      fold.hidden = true;
+      for (const row of rows) row.hidden = false;
+    });
+    fold.append(expand);
+    rows[0]?.before(fold);
+    return { fold, rows };
+  });
+}
+
+function preview(snapshot: Snapshot, view: PreviewView, select: (view: PreviewView) => void): { element: HTMLElement; show: (view: PreviewView) => void }
 {
   const content = el('div', 'snapshot-preview');
   if (snapshot.windows.some(window => window.tabs.some(tab => fileUrl(tab.url)))) {
@@ -437,7 +462,35 @@ function preview(snapshot: Snapshot): HTMLElement
   }
   const changes = snapshot.changes;
   const counts = changes ? changeCounts(changes) : null;
-  if (counts && (counts.opened || counts.closed)) content.append(changeLegend(snapshot));
+  const folds: ReturnType<typeof foldUnchanged> = [];
+  const views: { value: PreviewView; control: HTMLButtonElement }[] = [];
+  if (counts && (counts.opened || counts.closed)) {
+    // switch between every tab and only the changes with unchanged tabs folded in place
+    const toolbar = el('div', 'change-toolbar');
+    const group = el('div', 'change-views');
+    group.setAttribute('role', 'group');
+    group.setAttribute('aria-label', 'Show tabs or changes');
+    const tabCount = snapshot.windows.reduce((total, window) => total + window.tabs.length, 0);
+    for (const [value, label, count] of [['tabs', 'Tabs', tabCount], ['changes', 'Changes', counts.opened + counts.closed]] as const) {
+      const control = el('button', 'change-view');
+      control.type = 'button';
+      control.append(el('span', '', label), el('span', 'muted', String(count)));
+      control.addEventListener('click', () => { select(value); show(value); });
+      group.append(control);
+      views.push({ value, control });
+    }
+    toolbar.append(group, changeLegend(snapshot));
+    content.append(toolbar);
+  }
+  function show(next: PreviewView): void
+  {
+    for (const { value, control } of views) control.setAttribute('aria-pressed', String(value === next));
+    // hide folded rows in place so file access updates still reach them
+    for (const { fold, rows } of folds) {
+      fold.hidden = next === 'tabs';
+      for (const row of rows) row.hidden = next === 'changes';
+    }
+  }
   for (const [index, window] of snapshot.windows.entries()) {
     const section = el('section', 'window-preview');
     const heading = el('h3', 'window-heading');
@@ -478,6 +531,7 @@ function preview(snapshot: Snapshot): HTMLElement
       tabs.append(item);
       for (const closedTab of closed.get(tabIndex) ?? []) tabs.append(closedTabRow(closedTab));
     }
+    if (views.length) folds.push(...foldUnchanged(tabs));
     section.append(tabs);
     content.append(section);
   }
@@ -491,19 +545,21 @@ function preview(snapshot: Snapshot): HTMLElement
     section.append(heading, tabs);
     content.append(section);
   }
-  return content;
+  show(views.length ? view : 'tabs');
+  return { element: content, show };
 }
 
 // 20 steps of 4px so each step shows 5% of the tabs involved
 const CHANGE_BAR_STEPS = 20;
 const CHANGE_BAR_STEP_PX = 4;
 
-function changeStrip(counts: ChangeCounts, item: Pick<Summary, 'tabCount' | 'savedAt'>): HTMLElement | null
+function changeStrip(counts: ChangeCounts, item: Pick<Summary, 'tabCount' | 'savedAt'>): HTMLButtonElement | null
 {
   if (!counts.opened && !counts.closed) return null;
   // scale the bar to every tab involved so a closed window stands out from a single tab
   const total = Math.max(1, item.tabCount + counts.closed);
-  const strip = el('span', 'change-strip');
+  const strip = el('button', 'change-strip');
+  strip.type = 'button';
   const bar = el('span', 'change-bar');
   const text = el('span', 'change-text');
   let free = CHANGE_BAR_STEPS;
@@ -864,6 +920,9 @@ function row(item: Summary, highlight: () => SearchHighlight<SearchField> | null
   let snapshot: Snapshot | undefined;
   let rendered = false;
   let previewVersion = 0;
+  // remember the chosen preview view while the row stays on the page
+  let view: PreviewView = 'tabs';
+  let shown: ReturnType<typeof preview> | undefined;
   function update(value: Summary): void
   {
     item = value;
@@ -896,6 +955,13 @@ function row(item: Summary, highlight: () => SearchHighlight<SearchField> | null
     renderedChanges = changes;
     strip?.remove();
     strip = item.changeCounts ? changeStrip(item.changeCounts, item) : null;
+    // open the session on its changes and switch an expanded preview between changes and tabs
+    strip?.addEventListener('click', event => {
+      event.preventDefault();
+      view = details.open && view === 'changes' ? 'tabs' : 'changes';
+      shown?.show(view);
+      details.open = true;
+    });
     if (strip) countRow.append(strip);
     if (outdated) resetPreview();
   }
@@ -950,7 +1016,8 @@ function row(item: Summary, highlight: () => SearchHighlight<SearchField> | null
     const version = previewVersion;
     void load().then(value => {
       if (!details.isConnected || version !== previewVersion) return;
-      details.append(preview(value));
+      shown = preview(value, view, next => { view = next; });
+      details.append(shown.element);
     }, (error: unknown) => {
       if (version !== previewVersion) return;
       rendered = false;
@@ -962,6 +1029,7 @@ function row(item: Summary, highlight: () => SearchHighlight<SearchField> | null
     // reload the session so an open preview shows the new comparison
     previewVersion++;
     snapshot = undefined;
+    shown = undefined;
     rendered = false;
     for (const content of details.querySelectorAll('.snapshot-preview')) {
       for (const button of content.querySelectorAll<HTMLButtonElement>('.window-restore')) restoreButtons.delete(button);
