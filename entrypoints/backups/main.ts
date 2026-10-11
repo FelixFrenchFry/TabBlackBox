@@ -8,7 +8,7 @@ import { EXPORT_FORMATS, type ExportFormat } from '../../src/export-formats';
 import { MB } from '../../src/storage';
 import { FILE_ACCESS_MESSAGE, fileUrl, restorableUrl, selectWindows } from '../../src/session';
 import { canRestore, createSessionDialogLock } from '../../src/ui/restore-state';
-import { setup, brand, button, icons, icon, el, request, createStatusView, notice, plural } from '../../src/ui/shared';
+import { setup, brand, button, icons, icon, el, request, createStatusView, notice, plural, formatNumber } from '../../src/ui/shared';
 import { createRefreshQueue } from '../../src/ui/refresh-queue';
 import { createBackupButton } from '../../src/ui/backup-button';
 import { createToast } from '../../src/ui/toast';
@@ -1106,7 +1106,7 @@ async function loadHistory(panel: ReturnType<typeof historyPanel>, reset: boolea
     if (data.kind !== 'history') throw new Error('Unexpected history response.');
     panel.count.textContent = String(data.count);
     const mb = data.bytes / MB;
-    panel.usage.textContent = `${mb > 0 && mb < 0.01 ? '<0.01' : mb.toLocaleString(undefined, { maximumFractionDigits: 2 })} MB`;
+    panel.usage.textContent = `${mb > 0 && mb < 0.01 ? '<0.01' : formatNumber(mb, 2)} MB`;
     if (panel === savedPanel) exportAll.disabled = data.count === 0;
     let page = data.items;
     let pageLimit = last ? HISTORY_PAGE_LIMIT : HISTORY_INITIAL_LIMIT;

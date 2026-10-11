@@ -1,4 +1,4 @@
-import { createElement, Archive, ArrowDown, ArrowUp, ArrowUpDown, ArrowUpRight, Bookmark, ChartLine, Check, ChevronDown, CircleAlert, CircleQuestionMark, Clock3, Download, FileText, Globe, HardDrive, History, ListFilter, LoaderCircle, LockKeyhole, Monitor, Palette, Pencil, Pin, RotateCcw, Save, Settings, ShieldCheck, Trash2, Undo2, UnfoldVertical, Upload, X, type IconNode } from 'lucide';
+import { createElement, AppWindow, Archive, ArrowDown, ArrowUp, ArrowUpDown, ArrowUpRight, Bookmark, ChartLine, Check, ChevronDown, CircleAlert, CircleQuestionMark, Clock3, Database, Download, FileText, Globe, HardDrive, History, ListFilter, LoaderCircle, LockKeyhole, Monitor, Palette, Pencil, Pin, RotateCcw, Save, Settings, ShieldCheck, Trash2, Undo2, UnfoldVertical, Upload, X, type IconNode } from 'lucide';
 import type { Data, Reply, Request } from '../protocol';
 import type { Overview } from '../model';
 import { initializeAppearance } from './appearance';
@@ -6,7 +6,7 @@ import { initializeDates, setTimestamp, timestamp } from './dates';
 import { initializeTooltips } from './tooltip';
 import './style.css';
 
-export const icons = { Archive, ArrowDown, ArrowUp, ArrowUpDown, ArrowUpRight, Bookmark, ChartLine, Check, ChevronDown, CircleAlert, CircleQuestionMark, Clock3, Download, FileText, Globe, HardDrive, History, ListFilter, LoaderCircle, LockKeyhole, Monitor, Palette, Pencil, Pin, RotateCcw, Save, Settings, ShieldCheck, Trash2, Undo2, UnfoldVertical, Upload, X };
+export const icons = { AppWindow, Archive, ArrowDown, ArrowUp, ArrowUpDown, ArrowUpRight, Bookmark, ChartLine, Check, ChevronDown, CircleAlert, CircleQuestionMark, Clock3, Database, Download, FileText, Globe, HardDrive, History, ListFilter, LoaderCircle, LockKeyhole, Monitor, Palette, Pencil, Pin, RotateCcw, Save, Settings, ShieldCheck, Trash2, Undo2, UnfoldVertical, Upload, X };
 
 export function icon(node: IconNode, size = 16): SVGElement
 {
@@ -140,3 +140,9 @@ export function notice(message: string): HTMLElement
 }
 
 export function plural(count: number, label: string): string { return `${count} ${label}${count === 1 ? '' : 's'}`; }
+
+// format numbers with period decimals and comma grouping regardless of the browser locale
+export function formatNumber(value: number, maximumFractionDigits = 0): string
+{
+  return value.toLocaleString('en-US', { maximumFractionDigits });
+}

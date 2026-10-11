@@ -2,7 +2,7 @@ import { chartMaximum, parseTabChartPeriod, TAB_CHART_PERIODS, tabChartRange, ty
 import { errorMessage, type HistoryRange, type Metadata, type TabCountPoint } from '../model';
 import { createHelp } from './help';
 import { positionPopover } from './popover';
-import { button, el, icon, icons, request } from './shared';
+import { button, el, formatNumber, icon, icons, request } from './shared';
 
 const CHART_HEIGHT = 160;
 const CHART_MARGIN = { top: 10, right: 12, bottom: 24, left: 44 };
@@ -133,7 +133,7 @@ export function createTabChart()
     const chart = svg('svg', { width, height: CHART_HEIGHT, viewBox: `0 0 ${width} ${CHART_HEIGHT}`, 'aria-hidden': 'true' });
     for (const value of [0, maximum / 2, maximum]) {
       const label = svg('text', { class: 'tab-chart-label', x: CHART_MARGIN.left - 8, y: y(value), 'text-anchor': 'end', 'dominant-baseline': 'middle' });
-      label.textContent = value.toLocaleString();
+      label.textContent = formatNumber(value);
       chart.append(svg('line', { class: 'tab-chart-grid', x1: CHART_MARGIN.left, x2: right, y1: y(value), y2: y(value) }), label);
     }
     const ticks = 4;

@@ -4,7 +4,7 @@ import { readDateFormat, setDateFormat } from './dates';
 import { errorMessage, type Overview, type StorageSettings } from '../model';
 import { DEFAULT_STORAGE_SETTINGS, MB, parseStorageSettings } from '../storage';
 import { readAppearance, setAppearance } from './appearance';
-import { button, el, icon, icons, notice, plural, request, createStatusView } from './shared';
+import { button, el, formatNumber, icon, icons, notice, plural, request, createStatusView } from './shared';
 
 function settingsPanel(title: string, glyph: Parameters<typeof icon>[0])
 {
@@ -58,7 +58,7 @@ function confirmCleanup(count: number): Promise<boolean>
     dialog.append(title, el('p', '', `Applying these limits will delete ${plural(count, 'older backup')}. This cannot be undone. Your saved sessions and newest recovery backup will be kept.`));
     const actions = el('div', 'dialog-actions');
     const cancel = button('Cancel', icons.X);
-    const confirm = button('Apply limits', icons.HardDrive, 'button danger');
+    const confirm = button('Apply limits', icons.Database, 'button danger');
     actions.append(cancel, confirm);
     dialog.append(actions);
     cancel.addEventListener('click', () => dialog.close());
@@ -137,7 +137,7 @@ export function createSettingsView(onSaved: () => void)
   dateRow.append(dateText, dateControl);
   appearanceBody.append(themeRow, dateRow, appearanceFeedback);
 
-  const { element: storage, body: storageBody } = settingsPanel('Storage limits', icons.HardDrive);
+  const { element: storage, body: storageBody } = settingsPanel('Storage limits', icons.Database);
   const usage = el('p', 'settings-storage muted', 'Checking storage…');
   const usageRow = el('div', 'storage-usage');
   const percentage = el('span', 'storage-percentage muted', '—');
@@ -318,10 +318,10 @@ export function createSettingsView(onSaved: () => void)
       feedback.replaceChildren();
       const settings = overview.metadata.settings;
       const mb = overview.automaticStorage.bytes / MB;
-      const used = mb > 0 && mb < 0.01 ? '<0.01' : mb.toLocaleString(undefined, { maximumFractionDigits: 2 });
+      const used = mb > 0 && mb < 0.01 ? '<0.01' : formatNumber(mb, 2);
       const percent = mb / settings.maxStorageMB * 100;
-      const percentText = percent > 0 && percent < 0.1 ? '<0.1' : percent.toLocaleString(undefined, { maximumFractionDigits: 1 });
-      usage.textContent = `${plural(overview.automaticStorage.count, 'automatic backup')} · ${used} MB of ${settings.maxStorageMB.toLocaleString()} MB used`;
+      const percentText = percent > 0 && percent < 0.1 ? '<0.1' : formatNumber(percent, 1);
+      usage.textContent = `${plural(overview.automaticStorage.count, 'automatic backup')} · ${used} MB of ${formatNumber(settings.maxStorageMB)} MB used`;
       percentage.textContent = `${percentText}%`;
       meter.max = settings.maxStorageMB * MB;
       meter.value = overview.automaticStorage.bytes;
