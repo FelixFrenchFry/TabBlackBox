@@ -5,7 +5,7 @@ export class StorageLimitExceededError extends Error {
 }
 
 export const MB = 1_000_000;
-export const DEFAULT_STORAGE_SETTINGS: Readonly<StorageSettings> = { retentionDays: null, maxBackups: 5000, maxStorageMB: 100 };
+export const DEFAULT_STORAGE_SETTINGS: Readonly<StorageSettings> = { retentionDays: null, maxBackups: null, maxStorageMB: 100 };
 
 export function parseStorageSettings(value: unknown): StorageSettings
 {

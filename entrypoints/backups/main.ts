@@ -37,7 +37,7 @@ headerInner.append(brand(), headerInfo);
 header.append(headerInner);
 const nav = el('nav', 'navigation');
 nav.setAttribute('aria-label', 'Main navigation');
-const active = el('a', 'nav-item active', 'Backup history');
+const active = el('a', 'nav-item active', 'Backups');
 active.href = '#history';
 active.setAttribute('aria-current', 'page');
 active.prepend(icon(icons.History));
@@ -53,7 +53,7 @@ const heading = el('div', 'page-heading');
 const titles = el('div', 'page-titles');
 // share the title row with tab search
 const titleRow = el('div', 'page-title-row');
-titleRow.append(el('h1', '', 'Backup history'));
+titleRow.append(el('h1', '', 'Backups'));
 titles.append(titleRow, el('p', 'muted', 'Browse manual and automatic browser session backups. Expand a backup to view its tabs, windows, and tab groups, open individual URLs, or restore the session.'));
 const backup = createBackupButton(() => { void refresh('backup'); });
 heading.append(titles);
@@ -176,8 +176,8 @@ root.append(header, nav, main, statistics.element, settings.element, toast.eleme
 
 function showView(): void
 {
-  // show one view per hash and fall back to backup history
-  const views = [{ link: active, element: main, title: 'Backup history' }, { link: statisticsLink, element: statistics.element, title: 'Statistics' }, { link: settingsLink, element: settings.element, title: 'Settings' }];
+  // show one view per hash and fall back to backups
+  const views = [{ link: active, element: main, title: 'Backups' }, { link: statisticsLink, element: statistics.element, title: 'Statistics' }, { link: settingsLink, element: settings.element, title: 'Settings' }];
   const current = views.find(view => view.link.hash === location.hash) ?? views[0];
   for (const view of views) {
     const selected = view === current;
@@ -186,7 +186,7 @@ function showView(): void
     if (selected) view.link.setAttribute('aria-current', 'page');
     else view.link.removeAttribute('aria-current');
   }
-  document.title = `TabBlackBox · ${current?.title ?? 'Backup history'}`;
+  document.title = `TabBlackBox · ${current?.title ?? 'Backups'}`;
 }
 window.addEventListener('hashchange', showView);
 showView();
@@ -388,7 +388,8 @@ function tabLabel(text: string, url: string | null, search?: SearchHighlight<Tab
   open.setAttribute('aria-label', openLabel);
   // open row tooltips above so moving down the list keeps the next tab visible
   setTooltip(open, openLabel, { placement: 'above' });
-  if (url !== null) setTooltip(title, url, { placement: 'above' });
+  // delay address tooltips like the popup's closed tabs so sweeping across titles opens nothing
+  if (url !== null) setTooltip(title, url, { delay: 800, placement: 'above' });
   const address = el('span', 'tab-url', url === null ? 'URL unavailable' : search ? displayUrl(url) : siteLabel(url));
   open.prepend(address);
   if (!search) {
