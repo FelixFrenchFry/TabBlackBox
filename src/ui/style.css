@@ -409,5 +409,6 @@ input.limit-switch[type="checkbox"]:checked::before { top: 7px; left: 12px; righ
 .scheduled-backup-time { color: var(--fgColor-default); margin-left: .25em; }
 
 .popup .scheduled-backup-time { display: block; margin-left: 0; }
+.popup .status-card > p { min-height: 3em; }
 
 .setting-validation { color: var(--fgColor-danger); }
