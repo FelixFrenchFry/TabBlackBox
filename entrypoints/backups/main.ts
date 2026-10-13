@@ -496,7 +496,7 @@ function preview(snapshot: Snapshot, view: PreviewView, select: (view: PreviewVi
     const section = el('section', 'window-preview');
     const heading = el('h3', 'window-heading');
     heading.append(icon(icons.Monitor), document.createTextNode(`Window ${index + 1}`), el('span', 'muted', plural(window.tabs.length, 'tab')));
-    const restore = button('Restore this', icons.RotateCcw, 'button small window-restore');
+    const restore = button('', icons.RotateCcw, 'button small icon-button invisible window-restore');
     restore.setAttribute('aria-label', `Restore this window ${index + 1}`);
     setTooltip(restore, 'Restore only this window and its tabs');
     restore.disabled = sessionDialogLock.active || !canRestore({ tabCount: window.tabs.length, backingUp, restoring });
@@ -972,7 +972,7 @@ function row(item: Summary, highlight: () => SearchHighlight<SearchField> | null
   summary.append(icon(icons.ChevronDown), number, label, date);
   details.append(summary);
   // show session actions as icons with short accessible names and descriptive shared tooltips
-  const restore = button('', icons.RotateCcw, 'button small icon-button');
+  const restore = button('', icons.RotateCcw, 'button small icon-button invisible');
   restore.setAttribute('aria-label', 'Restore');
   setTooltip(restore, 'Restore session in new windows');
   restore.disabled = sessionDialogLock.active || !canRestore({ tabCount: item.tabCount, backingUp, restoring });
@@ -990,11 +990,11 @@ function row(item: Summary, highlight: () => SearchHighlight<SearchField> | null
   keep.hidden = item.savedAt !== undefined;
   keep.addEventListener('click', event => { event.preventDefault(); nameSession(item, keep, 'keep'); });
   nameRow.append(rename, keep, tags);
-  const exportSession = button('', icons.Download, 'button small icon-button');
+  const exportSession = button('', icons.Download, 'button small icon-button invisible');
   exportSession.setAttribute('aria-label', 'Export session');
   setTooltip(exportSession, 'Export session to a file');
   exportSession.addEventListener('click', () => exportSessions(exportSession, item));
-  const remove = button('', icons.Trash2, 'button small icon-button');
+  const remove = button('', icons.Trash2, 'button small icon-button invisible danger');
   remove.setAttribute('aria-label', 'Delete session');
   setTooltip(remove, item.savedAt === undefined ? 'Delete this automatic backup' : 'Delete this saved session');
   remove.addEventListener('click', () => deleteSession(item, remove));

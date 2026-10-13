@@ -28,6 +28,9 @@ p { margin-top: 6px; }
 .button.danger { background: var(--button-danger-bgColor-hover, #cf222e); color: var(--button-danger-fgColor-hover, #fff); border-color: var(--button-danger-borderColor-hover, #1f232826); }
 .button.danger:hover:not(:disabled) { background: var(--button-danger-bgColor-active, #a40e26); }
 .button.small { min-height: 28px; font-size: 12px; padding: 3px 10px; }
+.button.invisible { border-color: transparent; background: transparent; box-shadow: none; color: var(--button-invisible-iconColor-rest, var(--fgColor-muted)); }
+.button.invisible:hover:not(:disabled) { background: var(--button-invisible-bgColor-hover, var(--bgColor-neutral-muted)); }
+.button.invisible.danger:hover:not(:disabled) { background: var(--bgColor-danger-muted); color: var(--fgColor-danger); }
 .badge { display: inline-flex; align-items: center; border: 1px solid var(--borderColor-default); border-radius: 20px; padding: 0 7px; font-size: 12px; font-weight: 500; color: var(--fgColor-muted); white-space: nowrap; }
 .app-header { background: var(--bgColor-muted); border-bottom: 1px solid var(--borderColor-muted); }
 :root { --page-width: 1080px; --page-gutter: 32px; }
@@ -150,7 +153,7 @@ p { margin-top: 6px; }
 .history-sort-button:hover, .tab-chart-period:hover { background: var(--bgColor-neutral-muted); color: var(--fgColor-default); }
 .history-sort-button[aria-pressed="true"], .tab-chart-period[aria-pressed="true"] { color: var(--fgColor-default); font-weight: 600; }
 .backup-row { position: relative; border-top: 1px solid var(--borderColor-muted); }
-.backup-actions { position: absolute; right: 16px; top: 17px; display: flex; gap: 8px; }
+.backup-actions { position: absolute; right: 16px; top: 17px; display: flex; gap: 4px; }
 .backup-summary { display: grid; grid-template-columns: 16px max-content minmax(0, 1fr) minmax(0, 1.25fr); align-items: center; gap: 12px; padding: 10px 124px 10px 16px; cursor: pointer; list-style: none; min-height: 62px; }
 .backup-summary::-webkit-details-marker, .calendar-heading::-webkit-details-marker { display: none; }
 .backup-summary:hover { background: var(--bgColor-muted); }
@@ -193,7 +196,7 @@ details[open] > .backup-summary > svg, details[open] > .calendar-heading > svg {
 .window-preview + .window-preview { margin-top: 13px; }
 .window-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 9px 0; }
 .window-heading .muted { font-weight: 400; font-size: 12px; }
-.window-restore { margin-left: auto; }
+.window-restore { margin-left: -4px; }
 .tab-list { list-style: none; padding: 0; margin: 0; }
 .window-preview .tab-list { padding-left: 28px; }
 .tab-row { display: flex; align-items: center; gap: 10px; padding: 6.5px 0; border-top: 1px solid var(--borderColor-muted); }
