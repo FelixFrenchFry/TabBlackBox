@@ -1,7 +1,7 @@
 import type { RestoreSettings } from './model';
 
 export const UNLOAD_THRESHOLD_MAX = 10_000;
-export const DEFAULT_RESTORE_SETTINGS: Readonly<RestoreSettings> = { unloadBackgroundTabs: true, unloadThreshold: 100 };
+export const DEFAULT_RESTORE_SETTINGS: Readonly<RestoreSettings> = { unloadBackgroundTabs: false, unloadThreshold: 100 };
 
 export function parseRestoreSettings(value: unknown): RestoreSettings
 {

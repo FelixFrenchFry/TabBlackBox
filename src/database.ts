@@ -10,7 +10,7 @@ import { canonicalSession, canonicalTab, decodeSnapshot, encodeSnapshot, summari
 import { changedTabIds, compareSessions } from './changes';
 import { DEFAULT_STORAGE_SETTINGS, MB, newestAutomaticId, retentionPlan, retentionRemovals, storageTotals, storedBytes } from './storage';
 
-interface BackupDatabase extends DBSchema {
+export interface BackupDatabase extends DBSchema {
   snapshots: { key: string; value: StoredSnapshot; indexes: { tabIds: number } };
   tabs: { key: number; value: StoredTab; indexes: { url: string } };
   summaries: { key: string; value: Summary; indexes: { capturedAt: number } };
@@ -19,6 +19,25 @@ interface BackupDatabase extends DBSchema {
 }
 
 const TAB_SEARCH_RECORD_LIMIT = 500;
+
+// the first released schema
+// raise DATABASE_VERSION only together with a new upgrade step
+const RELEASED_VERSION = 9;
+export const DATABASE_VERSION = 9;
+
+export function upgradeDatabase(db: IDBPDatabase<BackupDatabase>, oldVersion: number): void
+{
+  // pre-release databases start empty at the first released schema
+  if (oldVersion < RELEASED_VERSION) {
+    for (const store of [...db.objectStoreNames]) db.deleteObjectStore(store);
+    db.createObjectStore('snapshots', { keyPath: 'id' }).createIndex('tabIds', 'tabIds', { multiEntry: true });
+    db.createObjectStore('tabs', { keyPath: 'id' }).createIndex('url', 'url');
+    db.createObjectStore('summaries', { keyPath: 'id' }).createIndex('capturedAt', 'capturedAt');
+    db.createObjectStore('metadata');
+    db.createObjectStore('imports');
+  }
+  // released schemas change only through later steps that keep existing records
+}
 
 const initialMetadata = (): Metadata => ({ privacyAcceptedAt: null, automatic: { ...DEFAULT_AUTOMATIC_SETTINGS }, settings: { ...DEFAULT_STORAGE_SETTINGS }, restore: { ...DEFAULT_RESTORE_SETTINGS }, latestId: null, lastSavedAt: null, lastCheckedAt: null, bytes: 0, automaticBytes: 0, savedBytes: 0, count: 0, operation: null, lastTabId: 0, lastSessionNumbers: { automatic: 0, manual: 0 }, historyRevision: 0 });
 
@@ -129,17 +148,8 @@ export class Repository {
 
   private db(): Promise<IDBPDatabase<BackupDatabase>>
   {
-    this.connection ??= openDB<BackupDatabase>(this.name, 9, {
-      upgrade(db)
-      {
-        // start every schema version with empty stores instead of migrating development data
-        for (const store of [...db.objectStoreNames]) db.deleteObjectStore(store);
-        db.createObjectStore('snapshots', { keyPath: 'id' }).createIndex('tabIds', 'tabIds', { multiEntry: true });
-        db.createObjectStore('tabs', { keyPath: 'id' }).createIndex('url', 'url');
-        db.createObjectStore('summaries', { keyPath: 'id' }).createIndex('capturedAt', 'capturedAt');
-        db.createObjectStore('metadata');
-        db.createObjectStore('imports');
-      },
+    this.connection ??= openDB<BackupDatabase>(this.name, DATABASE_VERSION, {
+      upgrade(db, oldVersion) { upgradeDatabase(db, oldVersion); },
       blocking: () => { void this.close(); },
       terminated: () => { this.connection = null; },
     }).catch((error: unknown) => { this.connection = null; throw error; });

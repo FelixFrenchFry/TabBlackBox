@@ -13,7 +13,8 @@
     "test": "vitest run",
     "test:install-browser": "node scripts/install-test-browser.mjs",
     "pretest:e2e": "wxt build",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "verify": "wxt build && tsc --noEmit && vitest run && playwright test"
   },
   "dependencies": {
     "@primer/primitives": "^11.10.0",

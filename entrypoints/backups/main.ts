@@ -38,7 +38,7 @@ header.append(headerInner);
 const nav = el('nav', 'navigation');
 nav.setAttribute('aria-label', 'Main navigation');
 const active = el('a', 'nav-item active', 'Backups');
-active.href = '#history';
+active.href = '#backups';
 active.setAttribute('aria-current', 'page');
 active.prepend(icon(icons.History));
 const statisticsLink = el('a', 'nav-item', 'Statistics');
