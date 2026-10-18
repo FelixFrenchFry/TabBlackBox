@@ -1,4 +1,4 @@
-"""Generate white-inset SVG logos; run node scripts/render-logo.mjs for PNGs."""
+"""generate white-inset SVG logos, run node scripts/render-logo.mjs for PNGs"""
 
 import math
 import re
@@ -23,7 +23,7 @@ def xy(p):
 
 
 def normalize_path(path, left, top, scale):
-    """Write actual 1024-canvas coordinates, without an SVG transform wrapper."""
+    """write actual 1024-canvas coordinates without an SVG transform wrapper"""
     def command(match):
         kind = match.group(1)
         values = [float(value) for value in match.group(2).split()]
@@ -40,7 +40,7 @@ def normalize_path(path, left, top, scale):
 
 
 def rounded_polygon(vertices, radii):
-    """Use circular fillets tangent to the adjoining edges, including concave corners."""
+    """use circular fillets tangent to the adjoining edges, including concave corners"""
     corners = []
     extrema = []
     for i, (p, radius) in enumerate(zip(vertices, radii)):
@@ -92,7 +92,7 @@ DEPTH_RADII = [OUTER_RADIUS - CORNER_OVERLAP, OUTER_RADIUS,
 
 
 def corner(before, vertex, after, radius):
-    """Return the start, end, and center of a circular corner fillet."""
+    """return the start, end, and center of a circular corner fillet"""
     u = tuple((a - b) / math.dist(before, vertex) for a, b in zip(before, vertex))
     v = tuple((a - b) / math.dist(after, vertex) for a, b in zip(after, vertex))
     angle = math.acos(sum(a * b for a, b in zip(u, v)))
@@ -106,11 +106,11 @@ def corner(before, vertex, after, radius):
 
 
 def extruded_outline(front):
-    """Join matching front/rear tangent points with straight depth edges.
+    """join matching front and rear tangent points with straight depth edges
 
-    Rounding a six-sided hull independently creates grey shoulders. Instead,
-    carry a nearly matching rounded face backward along the depth vector,
-    with the controlled corner-radius difference supplying the small overlap.
+    carries a nearly matching rounded face backward along the depth vector
+    instead of rounding a six-sided hull, the controlled corner-radius
+    difference supplies the small overlap without grey shoulders
     """
     corners = [corner(front[i - 1], p, front[(i + 1) % 4], DEPTH_RADII[i]) for i, p in enumerate(front)]
     normal = (DEPTH[1] / math.hypot(*DEPTH), -DEPTH[0] / math.hypot(*DEPTH))
@@ -140,7 +140,7 @@ def face_geometry(slope):
 
 
 def inset_polygon(vertices, distance):
-    """Inset a convex face by a constant perpendicular distance on each edge."""
+    """inset a convex face by a constant perpendicular distance on each edge"""
     area = sum(a[0] * b[1] - b[0] * a[1]
                for a, b in zip(vertices, vertices[1:] + vertices[:1]))
     direction = 1 if area > 0 else -1

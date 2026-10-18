@@ -232,37 +232,25 @@ export class Controller {
 
   async setStorageSettings(settings: StorageSettings, confirmedRemovalCount: number): Promise<StorageSettingsResult>
   {
-    await this.start(true);
     if (this.restoration.kind !== 'idle') throw new Error('Wait for restoration to finish before changing storage limits.');
     return this.enqueue(async () => {
-      // scan outside IndexedDB and reject browser changes observed during the scan
-      const generation = this.generation;
-      let session: Session;
-      try { session = await this.scan(); }
-      catch (error) {
-        this.captureFailed(error, 'scan');
-        throw error;
-      }
-      if (generation !== this.generation) {
-        this.changed();
-        throw new Error('Tabs changed while checking storage limits. Try saving the settings again.');
-      }
+      // successful settings cleanup starts no capture and keeps the capture status and schedule
       let result: StorageSettingsResult;
-      try { result = await this.repository.setStorageSettings(settings, confirmedRemovalCount, session, Date.now()); }
-      catch (error) {
+      try {
+        // mark a running record from a stopped worker as interrupted, queued actions never overlap a restoration
+        await this.repository.recoverOperation();
+        result = await this.repository.setStorageSettings(settings, confirmedRemovalCount, Date.now());
+      } catch (error) {
         // rejecting proposed limits leaves the active backup policy and status intact
         if (error instanceof StorageLimitExceededError) {
           throw new Error('The proposed space limit cannot fit the newest automatic backup. Increase the space limit. Your settings have not changed.');
         }
+        // failed database writes report an error and back off automatic captures like failed backups
         this.captureFailed(error, 'write');
         throw error;
       }
-      if (result.kind === 'saved') {
-        this.retryAfter = 0;
-        this.status = generation === this.generation
-          ? { kind: session.windows.length ? 'current' : 'empty' } : { kind: 'pending' };
-        if (generation !== this.generation) this.changed();
-      }
+      // a successful write lifts the write backoff so the next reconcile alarm or browser event retries capture
+      if (result.kind === 'saved') this.retryAfter = 0;
       return result;
     });
   }

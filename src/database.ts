@@ -297,29 +297,55 @@ export class Repository {
     return { items: items.slice(0, limit), truncated: items.length > limit, tooBroad: false };
   }
 
+  async setStorageSettings(settings: StorageSettings, confirmedRemovalCount: number, now: number): Promise<StorageSettingsResult>
+  {
+    // apply limits to stored backups without advancing the capture boundary
+    const tx = (await this.db()).transaction(['snapshots', 'tabs', 'summaries', 'metadata'], 'readwrite');
+    try {
+      const metadata = (await tx.objectStore('metadata').get('state')) ?? initialMetadata();
+      if (metadata.operation?.kind === 'running') throw new Error('Restoration is in progress.');
+      const history = await tx.objectStore('summaries').getAll();
+      if (retentionRemovals(history, metadata.latestId, settings, now).length ||
+          metadata.automaticBytes > (this.budget ?? settings.maxStorageMB * MB)) {
+        const state = await readStorage(tx.objectStore('snapshots'), tx.objectStore('tabs'));
+        const { removeIds } = retentionPlan(state.snapshots, state.tabs, metadata.latestId, settings, now, this.budget);
+        // confirm the current removal plan before changing any records
+        if (removeIds.length > confirmedRemovalCount) {
+          await tx.done;
+          return { kind: 'confirmation', removeCount: removeIds.length };
+        }
+        for (const id of removeIds) {
+          await tx.objectStore('snapshots').delete(id);
+          await tx.objectStore('summaries').delete(id);
+        }
+        const removed = new Set(removeIds);
+        state.snapshots = state.snapshots.filter(snapshot => !removed.has(snapshot.id));
+        await writeChanges({ snapshots: tx.objectStore('snapshots'), summaries: tx.objectStore('summaries') }, state, syncChanges(state));
+        await writeTabs(tx.objectStore('tabs'), state, metadata.lastTabId);
+        updateStorage(metadata, state);
+        if (removeIds.length) metadata.historyRevision++;
+      }
+      metadata.settings = settings;
+      await tx.objectStore('metadata').put(metadata, 'state');
+      await tx.done;
+      return { kind: 'saved' };
+    } catch (error) {
+      try { tx.abort(); } catch { /* transaction may already be aborted */ }
+      await tx.done.catch(() => undefined);
+      throw error;
+    }
+  }
+
   async capture(session: Session, source: Source, now: number, name?: string | null): Promise<CaptureResult>
   {
-    return this.writeCapture(session, source, now, undefined, name);
-  }
-
-  async setStorageSettings(settings: StorageSettings, confirmedRemovalCount: number, session: Session, now: number): Promise<StorageSettingsResult>
-  {
-    const result = await this.writeCapture(session, 'automatic', now, { settings, confirmedRemovalCount });
-    return result.kind === 'confirmation' ? result : { kind: 'saved' };
-  }
-
-  private writeCapture(session: Session, source: Source, now: number, change: undefined, name?: string | null): Promise<CaptureResult>;
-  private writeCapture(session: Session, source: Source, now: number, change: { settings: StorageSettings; confirmedRemovalCount: number }): Promise<CaptureResult | StorageSettingsResult>;
-  private async writeCapture(session: Session, source: Source, now: number, change?: { settings: StorageSettings; confirmedRemovalCount: number }, name?: string | null): Promise<CaptureResult | StorageSettingsResult>
-  {
     const db = await this.db();
-    // plan the candidate and commit snapshots, retention, and settings in one transaction
+    // plan the candidate and commit snapshots and retention in one transaction
     const tx = db.transaction(['snapshots', 'tabs', 'summaries', 'metadata'], 'readwrite');
     try {
       const metadata = (await tx.objectStore('metadata').get('state')) ?? initialMetadata();
       if (metadata.operation?.kind === 'running') throw new Error('Restoration is in progress.');
       const previousLastTabId = metadata.lastTabId;
-      const settings = change?.settings ?? metadata.settings;
+      const settings = metadata.settings;
       const history = await tx.objectStore('summaries').getAll();
       let result: CaptureResult = { kind: 'empty' };
       let candidate: Snapshot | undefined;
@@ -334,10 +360,9 @@ export class Repository {
           result = { kind: 'saved', id: candidate.id };
         }
       }
-      // unchanged and empty scans still honor expiration and proposed storage limits
+      // unchanged and empty scans still honor expiration and storage limits
       if (source === 'automatic' && !candidate && !retentionRemovals(history, metadata.latestId, settings, now).length &&
           metadata.automaticBytes <= (this.budget ?? settings.maxStorageMB * MB)) {
-        metadata.settings = settings;
         metadata.lastCheckedAt = now;
         await tx.objectStore('metadata').put(metadata, 'state');
         await tx.done;
@@ -351,10 +376,6 @@ export class Repository {
       const plan = source === 'manual'
         ? { removeIds: [] }
         : retentionPlan(state.snapshots, state.tabs, candidate?.id ?? metadata.latestId, settings, now, this.budget);
-      if (change && plan.removeIds.length > change.confirmedRemovalCount) {
-        await tx.done;
-        return { kind: 'confirmation', removeCount: plan.removeIds.length };
-      }
       for (const id of plan.removeIds) {
         await tx.objectStore('snapshots').delete(id);
         await tx.objectStore('summaries').delete(id);
@@ -371,7 +392,6 @@ export class Repository {
         // commit the number with the snapshot so failed or unchanged captures do not consume it
         Object.assign(metadata, { latestId: candidate.id, lastSavedAt: now });
       }
-      metadata.settings = settings;
       updateStorage(metadata, state);
       metadata.lastCheckedAt = now;
       await tx.objectStore('metadata').put(metadata, 'state');
