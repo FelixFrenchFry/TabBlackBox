@@ -4,6 +4,7 @@ import { BackupBusyError, Controller, type CaptureSchedule } from '../src/contro
 import { scanBrowser, restoreBrowser } from '../src/browser';
 import { errorMessage, type CaptureResult } from '../src/model';
 import { HISTORY_INITIAL_LIMIT, HISTORY_PAGE_LIMIT, parseRequest, type Data, type Reply } from '../src/protocol';
+import { hasExtensionTabs, isNewerVersion } from '../src/update';
 
 export default defineBackground(() =>
 {
@@ -40,6 +41,7 @@ export default defineBackground(() =>
   }
   const changed = () => { void hasPrivacyChoice().then(accepted => { if (accepted) controller.changed(); }).catch(failed); };
   const alarmName = 'reconcile-session';
+  const updatePrefix = 'apply-update:';
 
   async function badge(): Promise<void>
   {
@@ -66,6 +68,11 @@ export default defineBackground(() =>
   chrome.tabGroups.onRemoved.addListener(changed);
   chrome.alarms.onAlarm.addListener(alarm =>
   {
+    // retry pending updates independently of the backup privacy choice
+    if (alarm.name.startsWith(updatePrefix)) {
+      void applyUpdate(alarm.name.slice(updatePrefix.length)).catch(() => { /* the next alarm retries */ });
+      return;
+    }
     void hasPrivacyChoice().then(async accepted => {
       if (!accepted) return;
       if (alarm.name === alarmName) await controller.capture('automatic');
@@ -73,6 +80,39 @@ export default defineBackground(() =>
       await badge();
     }).catch(failed);
   });
+  // listening defers store updates to a reload or the next browser start
+  chrome.runtime.onUpdateAvailable.addListener(({ version }) =>
+  {
+    // the event fires once per downloaded update, so an alarm keeps retrying across worker restarts
+    void (async () => {
+      try {
+        for (const alarm of await chrome.alarms.getAll()) {
+          if (alarm.name.startsWith(updatePrefix)) await chrome.alarms.clear(alarm.name);
+        }
+        await chrome.alarms.create(`${updatePrefix}${version}`, { periodInMinutes: 1 });
+      } catch { /* the immediate attempt still runs and the next browser start applies the update */ }
+      await applyUpdate(version);
+    })().catch(() => { /* the retry alarm or the next browser start applies the update */ });
+  });
+
+  async function applyUpdate(version: string): Promise<void>
+  {
+    const alarm = `${updatePrefix}${version}`;
+    // the retry alarm can outlive an update that a reload or browser start already applied
+    if (!isNewerVersion(version, chrome.runtime.getManifest().version)) {
+      await chrome.alarms.clear(alarm);
+      return;
+    }
+    // reload only after queued captures and restorations and while no extension page would close
+    const queue = controller.idle();
+    await queue;
+    if (hasExtensionTabs(await chrome.tabs.query({}), chrome.runtime.getURL('/'))) return;
+    // work queued during the tab check waits for the next retry
+    if (controller.idle() !== queue) return;
+    // stop retrying first so a reload that does not apply the update cannot repeat every minute
+    await chrome.alarms.clear(alarm);
+    chrome.runtime.reload();
+  }
 
   async function handle(input: unknown): Promise<Data>
   {
