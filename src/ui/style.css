@@ -183,6 +183,8 @@ details[open] > .backup-summary > svg, details[open] > .calendar-heading > svg {
 .restore-dialog > form { margin-top: 12px; }
 .dialog-heading { display: flex; align-items: center; gap: 8px; }
 .backup-counts { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; }
+/* reserve the count width so change bars of different sessions start at the same position */
+.backup-counts > .muted { min-width: 20ch; font-variant-numeric: tabular-nums; }
 .change-strip { display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: transparent; color: inherit; font-variant-numeric: tabular-nums; }
 .change-strip:hover .change-text { text-decoration: underline; }
 .change-bar { display: inline-flex; width: 80px; height: 6px; --change-color: var(--borderColor-muted); }
@@ -247,6 +249,31 @@ details[open] > .backup-summary > svg, details[open] > .calendar-heading > svg {
 .search-label .tab-title { max-width: 100%; line-height: 20px; }
 .search-label .tab-open { max-width: 100%; margin-left: 0; min-height: 20px; padding: 0; }
 .search-label .tab-url { line-height: 20px; }
+.restore-result { padding: 16px; margin-bottom: 24px; border: 1px solid var(--borderColor-attention-emphasis, #9a6700); border-radius: 6px; background: var(--bgColor-default); }
+.restore-result-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.restore-result-header h2 { display: flex; align-items: center; gap: 10px; margin: 0; font-size: 14px; line-height: 28px; }
+.restore-result-header h2 > svg { flex: none; color: var(--fgColor-attention, #9a6700); }
+.restore-result-source { margin: 4px 0 16px 28px; overflow-wrap: anywhere; }
+.restore-result-counts { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-bottom: 16px; }
+.restore-result-counts > span { display: inline-flex; align-items: center; gap: 8px; }
+.restore-result-opened > svg { color: var(--fgColor-success); }
+.restore-result-error { color: var(--fgColor-danger); overflow-wrap: anywhere; }
+.restore-result-details { border-top: 1px solid var(--borderColor-default); }
+.restore-result-details > summary { display: flex; align-items: center; gap: 10px; padding: 12px 0; cursor: pointer; list-style: none; }
+.restore-result-details > summary::-webkit-details-marker { display: none; }
+.restore-result-details > summary > svg { color: var(--fgColor-muted); transform: rotate(-90deg); }
+.restore-result-details[open] > summary > svg { transform: none; }
+.restore-result-item { padding: 12px 0; border-top: 1px solid var(--borderColor-muted); }
+.restore-result-item:last-child { padding-bottom: 0; }
+.restore-result-item .tab-label { align-items: flex-start; }
+.restore-result-item .tab-title { font-weight: 600; }
+.restore-result-item p { margin: 8px 0 0 32px; }
+.restore-result-open { margin-top: 10px; }
+.restore-dialog.restore-operation-dialog { width: min(640px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; }
+.restore-operation-dialog.restore-operation-issues { border-color: var(--borderColor-attention-emphasis, #9a6700); }
+.restore-operation-dialog > .restore-result { padding: 0; margin: 0; border: 0; }
+.restore-operation-dialog .restore-result-header h2 { font-size: 18px; }
+.restore-progress-counts { margin-top: 6px; }
 .search-match { --search-match-color: #7d4e00; --search-match-background: #fae17d; border-radius: 2px; color: var(--search-match-color); background: var(--search-match-background); }
 [data-color-mode="dark"] .search-match { --search-match-color: #e3b341; --search-match-background: #bb80094d; }
 .match-gap::before { content: '…'; color: var(--fgColor-muted); }
@@ -273,6 +300,8 @@ details[open] > .backup-summary > svg, details[open] > .calendar-heading > svg {
 .backup-toast.is-success > svg { color: var(--fgColor-success); }
 .error-notice { border-color: var(--borderColor-danger-emphasis, #cf222e); color: var(--fgColor-danger); }
 .warning-notice { border-color: var(--borderColor-attention-emphasis, #9a6700); }
+.warning-text { display: flex; align-items: flex-start; gap: 8px; margin: 0; }
+.warning-text > svg { flex: none; margin-top: 3px; color: var(--fgColor-attention, #9a6700); }
 .notice details { margin-top: 10px; }
 .notice.file-access-required { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 16px; }
 .notice.file-access-required > p { flex: 1 1 320px; margin: 0; }

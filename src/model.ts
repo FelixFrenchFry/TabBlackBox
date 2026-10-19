@@ -27,9 +27,14 @@ export type HistorySort = 'date-desc' | 'date-asc' | 'number-desc' | 'number-asc
 export type HistoryCursor = Pick<Summary, 'capturedAt' | 'number' | 'id'>;
 export type HistoryRange = { start: number; end: number };
 export type BackupDay = { start: number; saved: number; automatic: number };
+export type RestoreIssue =
+  | { kind: 'tab' | 'pin'; title: string; url: string | null; message: string }
+  | { kind: 'group'; title: string; message: string };
 export type RestoreProgress = {
   snapshotId: string; startedAt: number; opened: number; skipped: number; failed: number;
   groupErrors: number; total: number; errors: string[];
+  // older results contain only error strings and have not been dismissed
+  name?: string | null; issues?: RestoreIssue[]; dismissed?: boolean;
 };
 export type Operation = RestoreProgress & (
   | { kind: 'running' }

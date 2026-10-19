@@ -12,6 +12,7 @@ import { setup, brand, button, icons, icon, el, request, createStatusView, notic
 import { createRefreshQueue } from '../../src/ui/refresh-queue';
 import { createBackupButton } from '../../src/ui/backup-button';
 import { createToast } from '../../src/ui/toast';
+import { createRestoreDialog } from '../../src/ui/restore-dialog';
 import { createHelp } from '../../src/ui/help';
 import { createSettingsView } from '../../src/ui/settings';
 import { createStatisticsView } from '../../src/ui/statistics';
@@ -62,6 +63,16 @@ const status = statusCard.element;
 const feedback = el('div');
 feedback.setAttribute('aria-live', 'polite');
 const toast = createToast();
+const restoreResult = createRestoreDialog((title, url) => tabLabel(title, url, { words: [], fields: [] }), {
+  acquire: () => {
+    if (!sessionDialogLock.acquire()) return false;
+    updateDialogButtons();
+    return true;
+  },
+  release: () => { sessionDialogLock.release(); updateDialogButtons(); },
+  focus: () => { if (restoreResult.element.hidden) backup.element.focus(); else restoreResult.element.focus(); },
+});
+status.append(restoreResult.element);
 const archiveRepository = new Repository();
 let archiveOperation: AbortController | null = null;
 // cancel page-owned file operations before the document and its database connection disappear
@@ -223,14 +234,22 @@ async function updateFileAccess(): Promise<void>
 {
   fileAccess = await chrome.extension.isAllowedFileSchemeAccess();
   // refresh expanded previews when Chrome's file access setting changes
-  for (const control of main.querySelectorAll<HTMLButtonElement>('.file-open')) control.disabled = !fileAccess;
-  for (const message of main.querySelectorAll<HTMLElement>('.file-access-required')) message.hidden = fileAccess;
+  for (const control of root.querySelectorAll<HTMLButtonElement>('.file-open')) control.disabled = !fileAccess;
+  for (const message of root.querySelectorAll<HTMLElement>('.file-access-required')) message.hidden = fileAccess;
+}
+
+// keep the warning icon aligned with the first text line
+function warningText(text: string): HTMLParagraphElement
+{
+  const paragraph = el('p', 'warning-text');
+  paragraph.append(icon(icons.TriangleAlert), el('span', '', text));
+  return paragraph;
 }
 
 function fileAccessNotice(): HTMLElement
 {
   const message = el('div', 'notice warning-notice file-access-required');
-  message.append(el('p', '', FILE_ACCESS_MESSAGE));
+  message.append(warningText(FILE_ACCESS_MESSAGE));
   const settings = button('Open extension settings', icons.Settings);
   settings.addEventListener('click', () => {
     void chrome.tabs.create({ url: `chrome://extensions/?id=${chrome.runtime.id}` }).catch((error: unknown) => message.append(notice(errorMessage(error))));
@@ -239,20 +258,18 @@ function fileAccessNotice(): HTMLElement
   return message;
 }
 
-function renderOperation(operation: Operation | null): void
+function renderOperation(operation: Operation | null, status: Overview['status'], pendingRequest: object | null): void
 {
+  restoreResult.update(operation, status, pendingRequest);
   const previous = lastOperation;
   lastOperation = operation;
-  // ignore stored results on page load and notify once even if a fast restore finishes between polls
+  // show successful restores once as a toast and keep issues in the persistent report
   if (previous === undefined || !operation || operation.kind === 'running') return;
   if (previous && previous.snapshotId === operation.snapshotId && previous.startedAt === operation.startedAt && previous.kind !== 'running') return;
-  const issues = operation.failed > 0 || operation.groupErrors > 0 || operation.errors.length > 0;
-  const title = operation.kind === 'interrupted' ? 'Restoration interrupted' : issues ? 'Restoration finished with issues' : 'Restoration finished';
-  const parts = [title, `${plural(operation.opened, 'tab')} opened`];
+  if (operation.kind === 'interrupted' || operation.failed > 0 || operation.groupErrors > 0 || operation.errors.length > 0 || operation.issues?.length) return;
+  const parts = ['Restoration finished', `${plural(operation.opened, 'tab')} opened`];
   if (operation.skipped) parts.push(`${operation.skipped} skipped`);
-  if (operation.failed) parts.push(`${operation.failed} failed`);
-  if (operation.groupErrors) parts.push(plural(operation.groupErrors, 'group error'));
-  toast.show(parts.join(' · '), operation.kind === 'interrupted' || issues ? icons.CircleAlert : icons.Check);
+  toast.show(parts.join(' · '), icons.Check);
 }
 
 async function confirmRestore(load: () => Snapshot | Promise<Snapshot>, trigger: HTMLButtonElement, windowIndex?: number): Promise<void>
@@ -282,7 +299,9 @@ async function confirmRestore(load: () => Snapshot | Promise<Snapshot>, trigger:
       dialog.append(el('p', 'muted', 'After enabling access, close this dialog and choose Restore again.'));
     }
     if (tabs.length > supported + blockedFiles) dialog.append(el('p', 'muted', `${plural(tabs.length - supported - blockedFiles, 'unsupported tab')} will be skipped. Their saved URLs remain in the preview.`));
-    dialog.append(el('p', 'muted', windowIndex === undefined ? 'Restoring a session again creates another copy of its tabs.' : 'Restoring a window again creates another copy of its tabs.'));
+    const duplicates = el('div', 'notice warning-notice');
+    duplicates.append(warningText(windowIndex === undefined ? 'Restoring a session again creates another copy of its tabs.' : 'Restoring a window again creates another copy of its tabs.'));
+    dialog.append(duplicates);
     const feedback = el('div');
     feedback.setAttribute('aria-live', 'polite');
     const actions = el('div', 'dialog-actions');
@@ -304,16 +323,34 @@ async function confirmRestore(load: () => Snapshot | Promise<Snapshot>, trigger:
     {
       confirm.disabled = true;
       feedback.replaceChildren();
+      const confirmation = [...dialog.childNodes];
+      restoreResult.begin(dialog, snapshot.id);
+      restoring = true;
+      updateDialogButtons();
+      updateSave();
       void (async () =>
       {
         try {
           await request(windowIndex === undefined ? { kind: 'restore', id: snapshot.id } : { kind: 'restore-window', id: snapshot.id, windowIndex });
+          restoreResult.accepted();
           restoring = true;
           updateDialogButtons();
           updateSave();
-          dialog.close();
           await refresh('overview');
-        } catch (error) { feedback.replaceChildren(notice(errorMessage(error))); confirm.disabled = false; }
+        } catch (error) {
+          restoreResult.cancel(dialog);
+          restoring = lastOperation?.kind === 'running';
+          updateDialogButtons();
+          updateSave();
+          if (dialog.open) {
+            dialog.replaceChildren(...confirmation);
+            dialog.removeAttribute('aria-label');
+            dialog.setAttribute('aria-labelledby', title.id);
+            feedback.replaceChildren(notice(errorMessage(error)));
+            confirm.disabled = false;
+            confirm.focus();
+          } else showError(error);
+        }
       })();
     });
     dialog.showModal();
@@ -1213,6 +1250,7 @@ function updateSave(): void
 
 function updateDialogButtons(): void
 {
+  restoreResult.element.disabled = sessionDialogLock.active;
   for (const [button, tabCount] of restoreButtons) button.disabled = sessionDialogLock.active || !canRestore({ tabCount, backingUp, restoring });
   for (const panel of panels) for (const [id, saved] of panel.sessionRows) {
     saved.rename.disabled = sessionDialogLock.active;
@@ -1222,27 +1260,28 @@ function updateDialogButtons(): void
   }
 }
 
-function applyOverview(overview: Overview): void
+function applyOverview(overview: Overview, pendingRequest: object | null): void
 {
   newestId = overview.automaticStorage.newestId;
   settings.update(overview);
   statistics.update(overview);
   statusCard.update(overview);
-  restoring = overview.status.kind === 'restoring';
+  renderOperation(overview.metadata.operation, overview.status, pendingRequest);
+  restoring = restoreResult.starting || overview.status.kind === 'restoring';
   updateSave();
   updateDialogButtons();
-  renderOperation(overview.metadata.operation);
 }
 
 const refresh = createRefreshQueue(async kind =>
 {
   if (kind === 'backup') { feedback.replaceChildren(); toast.clear(); }
   try {
+    const pendingRequest = restoreResult.pendingRequest;
     const data = await request({ kind });
     if (data.kind !== 'overview') throw new Error('Unexpected background response.');
     if (kind === 'backup' && data.captureResult?.kind === 'saved') resetHistoryFilters();
     await updateFileAccess();
-    applyOverview(data.overview);
+    applyOverview(data.overview, pendingRequest);
     void calendar.update(data.overview.metadata);
     void tabChart.update(data.overview.metadata);
     if (historyInvalidated || latestId !== data.overview.metadata.latestId || historyCount !== data.overview.metadata.count || historyRevision !== data.overview.metadata.historyRevision || panels.some(panel => !panel.rows.childElementCount)) {

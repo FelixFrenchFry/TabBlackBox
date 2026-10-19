@@ -651,6 +651,19 @@ export class Repository {
     await tx.done;
   }
 
+  async dismissOperation(snapshotId: string, startedAt: number): Promise<void>
+  {
+    const tx = (await this.db()).transaction('metadata', 'readwrite');
+    const metadata = await tx.store.get('state');
+    const operation = metadata?.operation;
+    // dismiss only the displayed result without overwriting a newer restore
+    if (metadata && operation && operation.kind !== 'running' && operation.snapshotId === snapshotId && operation.startedAt === startedAt) {
+      metadata.operation = { ...operation, dismissed: true };
+      await tx.store.put(metadata, 'state');
+    }
+    await tx.done;
+  }
+
   async recoverOperation(now = Date.now()): Promise<void>
   {
     const operation = (await this.metadata()).operation;

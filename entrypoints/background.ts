@@ -156,6 +156,9 @@ export default defineBackground(() =>
       case 'delete-session':
         await controller.deleteSession(request.id);
         return { kind: 'accepted' };
+      case 'dismiss-restore':
+        await controller.repository.dismissOperation(request.id, request.startedAt);
+        return { kind: 'accepted' };
       case 'restore':
         await controller.restore(request.id);
         return { kind: 'accepted' };
