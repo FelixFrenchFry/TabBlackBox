@@ -39,12 +39,6 @@ p { margin-top: 6px; }
 .header-info { display: flex; align-items: center; gap: 4px; font-size: 12px; }
 .local-label { color: var(--fgColor-muted); font-size: 12px; }
 .privacy-link { color: var(--fgColor-accent); white-space: nowrap; }
-.privacy-onboarding { max-width: 540px; margin: 32px auto; padding: 24px; }
-.privacy-onboarding h1 { margin-top: 24px; font-size: 22px; }
-.privacy-onboarding p { margin-block: 12px; }
-.privacy-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-block: 20px; }
-.popup .privacy-onboarding { margin: 0; padding: 20px; }
-.popup .privacy-actions { flex-direction: column; }
 .navigation { display: flex; padding: 0 max(calc(var(--page-gutter) - 14px), calc((100% - var(--page-width)) / 2 + var(--page-gutter) - 14px)); border-bottom: 1px solid var(--borderColor-default); background: var(--bgColor-muted); }
 .nav-item { display: inline-flex; align-items: center; gap: 8px; padding: 9px 14px; color: var(--fgColor-default); text-decoration: none; position: relative; font-weight: 600; }
 .nav-item.active::after { content: ''; height: 2px; background: var(--borderColor-accent-emphasis, #1f6feb); position: absolute; bottom: -1px; left: 8px; right: 8px; border-radius: 2px; }

@@ -26,10 +26,9 @@ import { displayUrl, siteLabel } from '../../src/ui/site-label';
 import { markMatches, type SearchHighlight } from '../../src/ui/highlight';
 import { setTooltip } from '../../src/ui/tooltip';
 import { HISTORY_INITIAL_LIMIT, HISTORY_PAGE_LIMIT, SESSION_NAME_LIMIT } from '../../src/protocol';
-import { privacyLink, requirePrivacyChoice } from '../../src/ui/privacy';
+import { privacyLink } from '../../src/ui/privacy';
 
 const root = setup();
-const privacyReady = requirePrivacyChoice(root);
 const header = el('header', 'app-header');
 const headerInner = el('div', 'header-inner');
 const headerInfo = el('div', 'header-info');
@@ -78,7 +77,7 @@ let archiveOperation: AbortController | null = null;
 // cancel page-owned file operations before the document and its database connection disappear
 window.addEventListener('pagehide', () => { archiveOperation?.abort(); void archiveRepository.close(); });
 window.addEventListener('beforeunload', event => { if (archiveOperation) event.preventDefault(); });
-void privacyReady.then(() => archiveRepository.clearAbandonedImport()).catch(showError);
+void archiveRepository.clearAbandonedImport().catch(showError);
 
 function readHistorySort(collection: Collection): HistorySort
 {
@@ -1376,7 +1375,5 @@ importFile.addEventListener('change', () => {
     }
   })();
 });
-void privacyReady.then(() => {
-  void refresh('refresh');
-  setInterval(() => { if (!document.hidden) void refresh('overview'); }, 1500);
-});
+void refresh('refresh');
+setInterval(() => { if (!document.hidden) void refresh('overview'); }, 1500);

@@ -1,6 +1,6 @@
 import type { AutomaticSettings, AutomaticUpdate } from './model';
 
-export const DEFAULT_AUTOMATIC_SETTINGS: Readonly<AutomaticSettings> = { enabled: true, intervalMinutes: 15, pausedUntil: null };
+export const DEFAULT_AUTOMATIC_SETTINGS: Readonly<AutomaticSettings> = { enabled: false, intervalMinutes: 15, pausedUntil: null };
 
 export function parseAutomaticUpdate(value: unknown): AutomaticUpdate
 {

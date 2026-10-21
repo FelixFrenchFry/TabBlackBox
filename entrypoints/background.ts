@@ -25,21 +25,12 @@ export default defineBackground(() =>
     }).catch(() => { /* periodic reconciliation remains the fallback */ });
   };
   const controller = new Controller(new Repository(), scanBrowser, restoreBrowser, () => { void badge(); }, scheduleWake);
-  let privacyReady: Promise<boolean> | undefined;
-  function hasPrivacyChoice(): Promise<boolean>
-  {
-    // a worker restart reloads the choice before admitting browser work
-    return privacyReady ??= controller.repository.metadata().then(metadata => metadata.privacyAcceptedAt !== null).catch((error: unknown) => {
-      privacyReady = undefined;
-      throw error;
-    });
-  }
   function failed(error: unknown): void
   {
     controller.status = { kind: 'error', message: errorMessage(error) };
     void badge();
   }
-  const changed = () => { void hasPrivacyChoice().then(accepted => { if (accepted) controller.changed(); }).catch(failed); };
+  const changed = () => controller.changed();
   const alarmName = 'reconcile-session';
   const updatePrefix = 'apply-update:';
 
@@ -68,17 +59,16 @@ export default defineBackground(() =>
   chrome.tabGroups.onRemoved.addListener(changed);
   chrome.alarms.onAlarm.addListener(alarm =>
   {
-    // retry pending updates independently of the backup privacy choice
+    // retry pending updates independently of automatic backup settings
     if (alarm.name.startsWith(updatePrefix)) {
       void applyUpdate(alarm.name.slice(updatePrefix.length)).catch(() => { /* the next alarm retries */ });
       return;
     }
-    void hasPrivacyChoice().then(async accepted => {
-      if (!accepted) return;
+    void (async () => {
       if (alarm.name === alarmName) await controller.capture('automatic');
       else if (alarm.name.startsWith(wakePrefix)) await controller.captureScheduled(alarm.name.slice(wakePrefix.length));
       await badge();
-    }).catch(failed);
+    })().catch(failed);
   });
   // listening defers store updates to a reload or the next browser start
   chrome.runtime.onUpdateAvailable.addListener(({ version }) =>
@@ -94,13 +84,6 @@ export default defineBackground(() =>
       await applyUpdate(version);
     })().catch(() => { /* the retry alarm or the next browser start applies the update */ });
   });
-  // a fresh install opens the backups page once so the privacy choice can start backups
-  chrome.runtime.onInstalled.addListener(({ reason }) =>
-  {
-    if (reason !== 'install') return;
-    void chrome.tabs.create({ url: chrome.runtime.getURL('/backups.html') }).catch(() => { /* the popup still offers the choice */ });
-  });
-
   async function applyUpdate(version: string): Promise<void>
   {
     const alarm = `${updatePrefix}${version}`;
@@ -123,15 +106,6 @@ export default defineBackground(() =>
   async function handle(input: unknown): Promise<Data>
   {
     const request = parseRequest(input);
-    if (request.kind === 'privacy-status') return { kind: 'privacy', accepted: await hasPrivacyChoice() };
-    if (request.kind === 'privacy-choice') {
-      await controller.repository.acceptPrivacy(request.automatic, Date.now());
-      privacyReady = Promise.resolve(true);
-      void initialize().catch(failed);
-      return { kind: 'privacy', accepted: true };
-    }
-    // pages cannot bypass the first-run choice with a capture or settings request
-    if (!await hasPrivacyChoice()) throw new Error('Choose your backup preference in the privacy notice first.');
     switch (request.kind) {
       case 'automatic-settings':
         await controller.setAutomaticSettings(request.update);
@@ -183,7 +157,6 @@ export default defineBackground(() =>
 
   async function initialize(): Promise<void>
   {
-    if (!await hasPrivacyChoice()) return;
     if (!await chrome.alarms.get(alarmName)) await chrome.alarms.create(alarmName, { periodInMinutes: 1 });
     await controller.start();
     await badge();

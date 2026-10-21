@@ -39,7 +39,7 @@ export function upgradeDatabase(db: IDBPDatabase<BackupDatabase>, oldVersion: nu
   // released schemas change only through later steps that keep existing records
 }
 
-const initialMetadata = (): Metadata => ({ privacyAcceptedAt: null, automatic: { ...DEFAULT_AUTOMATIC_SETTINGS }, settings: { ...DEFAULT_STORAGE_SETTINGS }, restore: { ...DEFAULT_RESTORE_SETTINGS }, latestId: null, lastSavedAt: null, lastCheckedAt: null, bytes: 0, automaticBytes: 0, savedBytes: 0, count: 0, operation: null, lastTabId: 0, lastSessionNumbers: { automatic: 0, manual: 0 }, historyRevision: 0 });
+const initialMetadata = (): Metadata => ({ automatic: { ...DEFAULT_AUTOMATIC_SETTINGS }, settings: { ...DEFAULT_STORAGE_SETTINGS }, restore: { ...DEFAULT_RESTORE_SETTINGS }, latestId: null, lastSavedAt: null, lastCheckedAt: null, bytes: 0, automaticBytes: 0, savedBytes: 0, count: 0, operation: null, lastTabId: 0, lastSessionNumbers: { automatic: 0, manual: 0 }, historyRevision: 0 });
 
 function matchesSearch(item: Summary, words: readonly string[], fields: readonly SearchField[]): boolean
 {
@@ -166,19 +166,6 @@ export class Repository {
   async metadata(): Promise<Metadata>
   {
     return (await (await this.db()).get('metadata', 'state')) ?? initialMetadata();
-  }
-
-  async acceptPrivacy(automatic: boolean, now: number): Promise<void>
-  {
-    // commit the first choice and capture setting together across open pages
-    const tx = (await this.db()).transaction('metadata', 'readwrite');
-    const metadata = (await tx.store.get('state')) ?? initialMetadata();
-    if (metadata.privacyAcceptedAt === null) {
-      metadata.privacyAcceptedAt = now;
-      metadata.automatic = { ...metadata.automatic, enabled: automatic, pausedUntil: null };
-      await tx.store.put(metadata, 'state');
-    }
-    await tx.done;
   }
 
   async get(id: string): Promise<Snapshot>
