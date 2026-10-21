@@ -120,7 +120,10 @@ export function createTopSites()
         glyph.append(icon(icons.ChevronDown));
         more.append(glyph, el('span', 'top-sites-name', count(otherSites, 'other website')));
         more.addEventListener('click', () => expand(data.sites.length + TOP_SITES_LIMIT));
-        row.append(more, fewer ?? el('span'), el('span', 'top-sites-count', `${formatNumber(otherCount)} · ${share(otherCount, data.total)}`));
+        // keep both controls together across the name and bar columns
+        const controls = el('span', 'top-sites-toggles');
+        controls.append(more, ...(fewer ? [fewer] : []));
+        row.append(controls, el('span', 'top-sites-count', `${formatNumber(otherCount)} · ${share(otherCount, data.total)}`));
       } else if (fewer) row.append(fewer);
       rows.push(row);
     }

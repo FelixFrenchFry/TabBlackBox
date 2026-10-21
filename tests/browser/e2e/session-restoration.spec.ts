@@ -75,7 +75,9 @@ test('captures, previews, restarts and restores real windows, pins, groups and d
     {
       const windows = await chrome.windows.getAll({ populate: true });
       const groups = await chrome.tabGroups.query({});
-      return { windows: windows.filter(window => window.tabs?.some(tab => !ids.includes(tab.id))), groups, tabs: await chrome.tabs.query({}) };
+      // restored tabs report their address as pending until the first navigation commits
+      const tabs = (await chrome.tabs.query({})).map(tab => ({ ...tab, url: tab.pendingUrl || tab.url }));
+      return { windows: windows.filter(window => window.tabs?.some(tab => !ids.includes(tab.id))), groups, tabs };
     }, existing.map(tab => tab.id));
     for (const previous of existing) expect(restored.tabs.find(tab => tab.id === previous.id)?.url).toBe(previous.url);
     const actual = restored.tabs.filter(tab => !existing.some(previous => previous.id === tab.id));

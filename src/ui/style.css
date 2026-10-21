@@ -121,7 +121,8 @@ p { margin-top: 6px; }
 .top-sites-bar { display: block; min-width: 8px; height: 8px; border-radius: 4px; background: var(--fgColor-accent, #0969da); }
 .top-sites-count { text-align: right; white-space: nowrap; }
 .top-sites-other { margin-top: 6px; color: var(--fgColor-muted); }
-.top-sites-other > :first-child { margin-left: 22px; max-width: calc(100% - 22px); }
+.top-sites-toggles { display: flex; grid-column: 1 / 3; align-items: center; gap: 8px; min-width: 0; }
+.top-sites-toggles > .top-sites-toggle + .top-sites-toggle { margin-left: 0; }
 .top-sites-toggle { display: inline-flex; justify-self: start; align-items: center; gap: 4px; min-width: 0; max-width: calc(100% + 8px); min-height: 28px; margin-left: -8px; padding: 0 8px; border: 0; border-radius: 4px; background: transparent; color: inherit; white-space: nowrap; }
 .top-sites-toggle:hover { background: var(--bgColor-neutral-muted); color: var(--fgColor-default); }
 .top-sites-fewer svg { transform: rotate(180deg); }
