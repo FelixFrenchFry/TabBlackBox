@@ -20,6 +20,10 @@ export type Summary = Pick<Snapshot, 'id' | 'number' | 'name' | 'capturedAt' | '
   windowCount: number; tabCount: number; supportedCount: number; bytes: number; changeCounts?: ChangeCounts;
 };
 export type TabCountPoint = Pick<Summary, 'id' | 'number' | 'capturedAt' | 'tabCount' | 'windowCount'> & { collection: Collection };
+// open counts every tab of the latest backup and all counts each page once across retained backups
+export type TopSitesScope = 'open' | 'all';
+export type SiteCount = { site: string; url: string | null; count: number };
+export type TopSites = { sites: SiteCount[]; siteCount: number; total: number };
 export type TabMatch = { url: string; title: string; lastSeen: number; lastSeenNumber: number; lastSeenCollection: Collection; automaticCount: number; savedCount: number };
 export type SearchField = 'name' | 'tags';
 export type TabSearchField = 'title' | 'url';
@@ -60,7 +64,7 @@ export type StorageSettings = { retentionDays: number | null; maxBackups: number
 export type StorageSettingsResult = { kind: 'saved' } | { kind: 'confirmation'; removeCount: number };
 export type CaptureResult = { kind: 'saved'; id: string } | { kind: 'unchanged' | 'empty' };
 export type Status = { kind: 'initializing' | 'pending' | 'current' | 'empty' | 'restoring' | 'disabled' | 'paused' } | { kind: 'error'; message: string };
-export type Overview = { status: Status; metadata: Metadata; latest: Summary | null; automaticStorage: { bytes: number; count: number; newestId: string | null } };
+export type Overview = { status: Status; metadata: Metadata; latest: Summary | null; automaticStorage: { bytes: number; count: number; newestId: string | null }; oldestCapturedAt: number | null };
 
 export function errorMessage(error: unknown): string
 {

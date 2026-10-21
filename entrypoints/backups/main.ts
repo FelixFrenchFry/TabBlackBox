@@ -18,6 +18,7 @@ import { createSettingsView } from '../../src/ui/settings';
 import { createStatisticsView } from '../../src/ui/statistics';
 import { createBackupCalendar } from '../../src/ui/calendar';
 import { createTabChart } from '../../src/ui/tab-chart';
+import { createTopSites } from '../../src/ui/top-sites';
 import { createSearchFields } from '../../src/ui/search-fields';
 import { createTabSearch } from '../../src/ui/tab-search';
 import { createTagEditor } from '../../src/ui/tag-editor';
@@ -154,7 +155,8 @@ const calendar = createBackupCalendar(range => {
   void Promise.all(panels.map(panel => loadHistory(panel, true))).catch(showError);
 });
 const tabChart = createTabChart();
-const statistics = createStatisticsView(tabChart.element);
+const topSites = createTopSites();
+const statistics = createStatisticsView(tabChart.element, topSites.element);
 const tabSearch = createTabSearch({ label: tabLabel, show: filterByTab });
 titleRow.append(tabSearch.element);
 const tabFilter = el('div', 'tab-filter');
@@ -1283,6 +1285,7 @@ const refresh = createRefreshQueue(async kind =>
     applyOverview(data.overview, pendingRequest);
     void calendar.update(data.overview.metadata);
     void tabChart.update(data.overview.metadata);
+    void topSites.update(data.overview.metadata);
     if (historyInvalidated || latestId !== data.overview.metadata.latestId || historyCount !== data.overview.metadata.count || historyRevision !== data.overview.metadata.historyRevision || panels.some(panel => !panel.rows.childElementCount)) {
       historyInvalidated = false;
       try {

@@ -128,6 +128,7 @@ export default defineBackground(() =>
       }
       case 'calendar': return { kind: 'calendar', days: await controller.repository.calendar(request.range) };
       case 'tab-counts': return { kind: 'tab-counts', ...await controller.repository.tabCounts(request.range) };
+      case 'top-sites': return { kind: 'top-sites', ...await controller.repository.topSites(request.scope, request.limit) };
       case 'history': return { kind: 'history', ...await controller.repository.history(request.before, request.before ? HISTORY_PAGE_LIMIT : HISTORY_INITIAL_LIMIT, request.collection, request.query, request.sort, request.range, request.tabUrl, request.fields, request.tag) };
       case 'tab-search': return { kind: 'tab-search', ...await controller.repository.searchTabs(request.query, request.limit, request.fields) };
       case 'snapshot': return { kind: 'snapshot', snapshot: await controller.repository.get(request.id) };

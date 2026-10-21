@@ -1,10 +1,11 @@
 import { applyAutomaticUpdate, DEFAULT_AUTOMATIC_SETTINGS } from './automatic';
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
-import type { AutomaticUpdate, BackupDay, CaptureResult, Collection, HistoryCursor, HistoryRange, HistorySort, Metadata, Operation, RestoreSettings, SearchField, Session, SessionDetails, Snapshot, Source, StorageSettings, StorageSettingsResult, StoredSnapshot, StoredTab, Summary, TabCountPoint, TabMatch, TabSearchField } from './model';
+import type { AutomaticUpdate, BackupDay, CaptureResult, Collection, HistoryCursor, HistoryRange, HistorySort, Metadata, Operation, RestoreSettings, SearchField, Session, SessionDetails, Snapshot, Source, StorageSettings, StorageSettingsResult, StoredSnapshot, StoredTab, Summary, TabCountPoint, TabMatch, TabSearchField, TopSites, TopSitesScope } from './model';
 import { DEFAULT_RESTORE_SETTINGS } from './restore-settings';
 import { compareHistory, SEARCH_FIELDS, TAB_SEARCH_FIELDS } from './history';
 import { dayRange } from './calendar';
 import { thinTabCounts } from './chart';
+import { TOP_SITES_LIMIT, topSites } from './sites';
 import { sessionDetails, type Archive, type ArchiveSession } from './archive';
 import { canonicalSession, canonicalTab, decodeSnapshot, encodeSnapshot, summarize } from './session';
 import { changedTabIds, compareSessions } from './changes';
@@ -219,6 +220,13 @@ export class Repository {
     return { items: result, count, bytes };
   }
 
+  async oldestCapturedAt(): Promise<number | null>
+  {
+    // read only the first entry of the capture time index across both collections
+    const cursor = await (await this.db()).transaction('summaries').store.index('capturedAt').openCursor();
+    return cursor?.value.capturedAt ?? null;
+  }
+
   async calendar(range: HistoryRange): Promise<BackupDay[]>
   {
     // aggregate only the displayed period without reading complete snapshots
@@ -253,6 +261,27 @@ export class Repository {
       points: [...thinTabCounts(points.filter(item => item.collection === 'automatic'), range), ...thinTabCounts(points.filter(item => item.collection === 'saved'), range)],
       before: before ? point(before) : null,
     };
+  }
+
+  async topSites(scope: TopSitesScope, limit = TOP_SITES_LIMIT): Promise<TopSites>
+  {
+    const transaction = (await this.db()).transaction(['metadata', 'snapshots', 'tabs']);
+    let urls: (string | null)[] = [];
+    if (scope === 'all') {
+      // count each page once across the shared tab records that retained backups refer to
+      // start with the newest records so each site keeps a recently seen address for its icon
+      urls = [...new Set((await transaction.objectStore('tabs').getAll()).reverse().map(tab => tab.url))];
+    } else {
+      // count every tab of the newest backup in either collection
+      const metadata = await transaction.objectStore('metadata').get('state');
+      const snapshot = metadata?.latestId ? await transaction.objectStore('snapshots').get(metadata.latestId) : undefined;
+      if (snapshot) {
+        const tabs = await readTabs([snapshot], id => transaction.objectStore('tabs').get(id));
+        urls = snapshot.windows.flatMap(window => window.tabs.map(id => tabs.get(id)?.url ?? null));
+      }
+    }
+    await transaction.done;
+    return topSites(urls, limit);
   }
 
   async searchTabs(query: string, limit = 100, fields: readonly TabSearchField[] = TAB_SEARCH_FIELDS): Promise<{ items: TabMatch[]; truncated: boolean; tooBroad: boolean }>

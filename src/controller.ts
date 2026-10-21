@@ -227,7 +227,7 @@ export class Controller {
     const latest = metadata.latestId ? await this.repository.summary(metadata.latestId) : null;
     // report the newest automatic backup so pages can hide its protected deletion
     const { items: [newest], bytes, count } = await this.repository.history(null, 1, 'automatic');
-    return { status: this.status, metadata, latest, automaticStorage: { bytes, count, newestId: newest?.id ?? null } };
+    return { status: this.status, metadata, latest, automaticStorage: { bytes, count, newestId: newest?.id ?? null }, oldestCapturedAt: await this.repository.oldestCapturedAt() };
   }
 
   async setStorageSettings(settings: StorageSettings, confirmedRemovalCount: number): Promise<StorageSettingsResult>

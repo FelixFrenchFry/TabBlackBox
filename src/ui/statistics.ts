@@ -12,12 +12,12 @@ function megabytes(bytes: number): string
   return mb > 0 && mb < 0.01 ? '<0.01' : formatNumber(mb, 2);
 }
 
-// show small sizes in kilobytes so per-backup averages stay readable
-function size(bytes: number): string
+// describe how long backups reach back in the largest whole unit
+function span(milliseconds: number): string
 {
-  if (bytes >= MB) return `${megabytes(bytes)} MB`;
-  const kb = bytes / 1000;
-  return `${kb > 0 && kb < 0.1 ? '<0.1' : formatNumber(kb, 1)} KB`;
+  const hours = Math.floor(milliseconds / 3_600_000);
+  if (hours >= 24) return plural(Math.floor(hours / 24), 'day');
+  return hours >= 1 ? plural(hours, 'hour') : 'Less than 1 hour';
 }
 
 function setText(node: Node, text: string): void
@@ -38,7 +38,7 @@ function statistic(label: string, glyph: IconNode)
   return { element, value, detail, trend };
 }
 
-export function createStatisticsView(chart: HTMLElement)
+export function createStatisticsView(...panels: HTMLElement[])
 {
   const element = el('main', 'history-main');
   const heading = el('div', 'page-heading');
@@ -58,8 +58,12 @@ export function createStatisticsView(chart: HTMLElement)
   const latestDate = timestamp(null);
   latestDetails.append(latestWindows, latestDate);
   latest.detail.append(latestEmpty, latestDetails);
-  summary.append(automatic.element, manual.element, storage.element, latest.element);
-  element.append(heading, summary, chart);
+  const history = statistic('Backup history', icons.History);
+  // show the oldest capture as a fixed date beside the relative span
+  const historyDate = el('time');
+  const dateLabel = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  summary.append(automatic.element, manual.element, storage.element, latest.element, history.element);
+  element.append(heading, summary, ...panels);
 
   let loadedKey = '';
   let pendingKey = '';
@@ -117,8 +121,7 @@ export function createStatisticsView(chart: HTMLElement)
       setText(manual.detail, `${megabytes(metadata.savedBytes)} MB`);
       const percent = automaticStorage.bytes / MB / metadata.settings.maxStorageMB * 100;
       setText(storage.value, `${percent > 0 && percent < 0.1 ? '<0.1' : formatNumber(percent, 1)}%`);
-      const average = automaticStorage.count ? ` (avg. ${size(automaticStorage.bytes / automaticStorage.count)} each)` : '';
-      setText(storage.detail, `${megabytes(automaticStorage.bytes)} MB of ${formatNumber(metadata.settings.maxStorageMB)} MB for automatic backups${average}`);
+      setText(storage.detail, `${megabytes(automaticStorage.bytes)} MB of ${formatNumber(metadata.settings.maxStorageMB)} MB for automatic backups`);
       setText(latest.value, latestBackup ? plural(latestBackup.tabCount, 'tab') : '—');
       setTimestamp(latestDate, latestBackup?.capturedAt ?? null);
       if (latestBackup) latestWindows.data = `${plural(latestBackup.windowCount, 'window')} · `;
@@ -136,6 +139,18 @@ export function createStatisticsView(chart: HTMLElement)
           if (counts.opened) text.append(el('span', 'change-count-opened', `+${formatNumber(counts.opened)} opened`));
           if (counts.closed) text.append(el('span', 'change-count-closed', `−${formatNumber(counts.closed)} closed`));
           latest.trend.replaceChildren(text);
+        }
+      }
+      // reach back to the oldest backup of either collection because manual backups are kept until deleted
+      const oldest = overview.oldestCapturedAt;
+      setText(history.value, oldest === null ? '—' : span(Math.max(0, Date.now() - oldest)));
+      if (oldest === null) setText(history.detail, 'No backups yet');
+      else {
+        const date = dateLabel.format(oldest);
+        historyDate.dateTime = new Date(oldest).toISOString();
+        if (historyDate.textContent !== date || !history.detail.contains(historyDate)) {
+          historyDate.textContent = date;
+          history.detail.replaceChildren('Since ', historyDate, ' · oldest kept backup');
         }
       }
       void updateRecent(overview);
