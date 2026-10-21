@@ -314,6 +314,7 @@ details[open] > .backup-summary > svg, details[open] > .calendar-heading > svg {
 .session-card-name { display: flex; align-items: baseline; gap: 8px; }
 .session-card-title { min-width: 0; overflow-wrap: anywhere; }
 .restore-dialog > .session-card { margin: 12px 0 6px; }
+.restore-dialog > .notice { margin: 12px 0; }
 .session-card > .muted { min-height: 1.5em; margin-top: 2px; font-size: 12px; }
 .export-format-label { display: block; margin-bottom: 6px; }
 .export-format { display: block; }

@@ -94,6 +94,12 @@ export default defineBackground(() =>
       await applyUpdate(version);
     })().catch(() => { /* the retry alarm or the next browser start applies the update */ });
   });
+  // a fresh install opens the backups page once so the privacy choice can start backups
+  chrome.runtime.onInstalled.addListener(({ reason }) =>
+  {
+    if (reason !== 'install') return;
+    void chrome.tabs.create({ url: chrome.runtime.getURL('/backups.html') }).catch(() => { /* the popup still offers the choice */ });
+  });
 
   async function applyUpdate(version: string): Promise<void>
   {
