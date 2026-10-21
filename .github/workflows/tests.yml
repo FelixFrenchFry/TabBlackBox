@@ -1,0 +1,136 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      macos:
+        description: Also run the tests on macOS
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: ${{ matrix.platform.name }} / Node 24 / Chromium
+    runs-on: ${{ matrix.platform.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      # total of 2 combinations (2 operating systems)
+      matrix:
+        platform:
+          # Ubuntu on the latest runner image
+          - name: Ubuntu
+            os: ubuntu-latest
+            artifact: ubuntu
+          # Windows Server on the latest runner image
+          - name: Windows
+            os: windows-latest
+            artifact: windows
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # download Playwright Chromium into .test-browsers
+      - name: Install test browser
+        run: npm run test:install-browser
+
+      - name: Install Chromium system libraries
+        if: runner.os == 'Linux'
+        run: npx playwright install-deps chromium
+
+      - name: Build extension
+        run: npm run build
+
+      - name: Check types
+        run: npm run typecheck
+
+      # unit, integration, package tests with coverage
+      - name: Run Vitest tests
+        run: npx vitest run --coverage
+
+      # ui and e2e tests load the built extension into headless Chromium
+      - name: Run Playwright tests
+        run: npx playwright test
+
+      - name: Upload test reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-reports-${{ matrix.platform.artifact }}
+          path: |
+            coverage/
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # run on macOS only when requested for a manual run
+  macos:
+    name: macOS / Node 24 / Chromium
+    if: github.event_name == 'workflow_dispatch' && inputs.macos
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # download Playwright Chromium into .test-browsers
+      - name: Install test browser
+        run: npm run test:install-browser
+
+      - name: Build extension
+        run: npm run build
+
+      - name: Check types
+        run: npm run typecheck
+
+      # unit, integration, package tests with coverage
+      - name: Run Vitest tests
+        run: npx vitest run --coverage
+
+      # ui and e2e tests load the built extension into headless Chromium
+      - name: Run Playwright tests
+        run: npx playwright test
+
+      - name: Upload test reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-reports-macos
+          path: |
+            coverage/
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 7
