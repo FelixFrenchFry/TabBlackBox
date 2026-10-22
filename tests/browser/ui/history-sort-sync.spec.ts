@@ -34,7 +34,7 @@ for (const local of [false, true]) {
       const date = other.getByRole('region', { name: 'Manual backups', exact: true }).getByRole('button', { name: /^Date,/ });
       await date.click();
       await expect(other.locator('.backup-title')).toHaveText(Array.from({ length: 5 }, (_, index) => String(index + 1)));
-      await expect(panel.getByRole('button', { name: 'Load more', exact: true })).toBeDisabled();
+      await expect(panel.getByRole('button', { name: 'Show more', exact: true })).toBeDisabled();
       expect(await panel.evaluate(element => element.getBoundingClientRect().height)).toBe(height);
       await expect(panel.locator('.backup-row').first()).toBeVisible();
       await expect(panel.locator('.backup-title')).toHaveText(originalNames);

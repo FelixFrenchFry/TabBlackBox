@@ -4,7 +4,7 @@ import { readDateFormat, setDateFormat } from './dates';
 import { errorMessage, type Overview, type StorageSettings } from '../model';
 import { DEFAULT_STORAGE_SETTINGS, MB, parseStorageSettings } from '../storage';
 import { readAppearance, setAppearance } from './appearance';
-import { button, el, formatNumber, icon, icons, notice, plural, request, createStatusView } from './shared';
+import { button, el, formatNumber, icon, icons, notice, plural, request } from './shared';
 
 function settingsPanel(title: string, glyph: Parameters<typeof icon>[0])
 {
@@ -302,9 +302,8 @@ export function createSettingsView(onSaved: () => void)
   storageBody.append(usageRow, meter, form);
 
   const { element: automatic, body: automaticBody } = settingsPanel('Automatic backups', icons.Clock3);
-  const backupStatus = createStatusView();
   const automaticControls = automaticSettings(overview => view.update(overview), onSaved);
-  automaticBody.append(automaticControls.element, backupStatus.element);
+  automaticBody.append(automaticControls.element);
   const { element: restore, body: restoreBody } = settingsPanel('Restoring sessions', icons.RotateCcw);
   const restoreControls = restoreSettings(overview => view.update(overview), onSaved);
   restoreBody.append(restoreControls.element);
@@ -333,7 +332,6 @@ export function createSettingsView(onSaved: () => void)
       }
       automaticControls.update(overview);
       restoreControls.update(overview);
-      backupStatus.update(overview);
     },
     showError(message: string): void { feedback.replaceChildren(notice(message)); },
   };

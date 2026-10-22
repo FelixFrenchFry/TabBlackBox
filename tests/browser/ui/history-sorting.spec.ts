@@ -48,11 +48,11 @@ for (const superseded of [false, true]) {
       await app.page.reload();
       const panel = app.page.getByRole('region', { name: 'Manual backups', exact: true });
       const names = panel.locator('.backup-title');
-      const more = panel.getByRole('button', { name: 'Load more', exact: true });
+      const more = panel.getByRole('button', { name: 'Show more', exact: true });
       const date = panel.getByRole('button', { name: /^Date,/ });
       await expect(names).toHaveCount(5);
       await more.click();
-      await expect(names).toHaveCount(15);
+      await expect(names).toHaveCount(10);
       const previous = await names.allTextContents();
       const stored = await app.page.evaluate(() => localStorage.getItem('tabblackbox.history-sort.saved'));
       await app.page.evaluate(() => {
@@ -71,15 +71,20 @@ for (const superseded of [false, true]) {
       if (superseded) await panel.getByRole('button', { name: /^Number,/ }).click();
       await expect(names).toHaveText(previous);
       await expect(more).toBeDisabled();
+      await expect(panel.getByRole('button', { name: 'Show fewer', exact: true })).toBeDisabled();
       await app.page.evaluate(() => document.dispatchEvent(new Event('release-sort')));
       await expect(app.page.locator('main:visible').getByText('Temporary sort failure')).toBeVisible();
       await expect(names).toHaveText(previous);
       await expect(date).toHaveAttribute('aria-label', 'Date, newest first. Sort oldest first');
       await expect(more).toBeEnabled();
+      await expect(panel.getByRole('button', { name: 'Show fewer', exact: true })).toBeEnabled();
       expect(await app.page.evaluate(() => localStorage.getItem('tabblackbox.history-sort.saved'))).toBe(stored);
       await more.click();
-      await expect(names).toHaveCount(25);
-      await more.click();
+      await expect(names).toHaveCount(15);
+      for (const count of [20, 25, 30, 35]) {
+        await more.click();
+        await expect(names).toHaveCount(count);
+      }
       await expect(names).toHaveText(Array.from({ length: 35 }, (_, index) => String(35 - index)));
       await date.click();
       await expect(names).toHaveText(['1', '2', '3', '4', '5']);

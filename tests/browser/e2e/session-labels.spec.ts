@@ -45,14 +45,14 @@ test('session names persist and refresh across pages without losing loaded or ex
   });
   await page.reload();
   await expect(page.locator('.backup-row')).toHaveCount(5);
-  for (const count of [15, 25, 35, 45, 55, 60]) {
-    await page.getByRole('button', { name: 'Load more' }).click();
+  for (let count = 10; count <= 60; count += 5) {
+    await page.getByRole('button', { name: 'Show more' }).click();
     await expect(page.locator('.backup-row')).toHaveCount(count);
   }
   const other = await context.newPage();
   await other.goto(url);
-  for (const count of [15, 25, 35, 45, 55, 60]) {
-    await other.getByRole('button', { name: 'Load more' }).click();
+  for (let count = 10; count <= 60; count += 5) {
+    await other.getByRole('button', { name: 'Show more' }).click();
     await expect(other.locator('.backup-row')).toHaveCount(count);
   }
   const row = page.locator('.backup-row').filter({ has: page.getByRole('button', { name: 'Rename session #1', exact: true }) });

@@ -2,7 +2,7 @@ import { test, expect } from '../fixtures/extension';
 import { enableAutomaticBackups } from '../fixtures/automatic';
 import type { Request, Reply } from '../../../src/protocol';
 
-for (const view of ['popup', 'backups', 'backups#settings']) {
+for (const view of ['popup', 'backups']) {
   test(view + ' preserves status timestamps and lets only the date clock advance relative text', async ({ extensionContext }) => {
     const context = await extensionContext();
     const worker = context.serviceWorkers()[0] ?? await context.waitForEvent('serviceworker');
@@ -25,16 +25,16 @@ for (const view of ['popup', 'backups', 'backups#settings']) {
           result.data.overview.status = { kind: 'pending' };
           result.data.overview.metadata.automatic = { enabled: true, intervalMinutes: 1440, pausedUntil: null };
           result.data.overview.metadata.lastSavedAt = savedAt;
-          result.data.overview.metadata.lastCheckedAt = savedAt;
         }
         if (message.kind === 'overview') document.documentElement.dataset.polls = String(++polls);
         return result;
       } });
     });
-    const [name, hash] = view.split('#');
-    await page.goto(`chrome-extension://${new URL(worker.url()).host}/${name}.html${hash ? '#' + hash : ''}`);
+    await page.goto(`chrome-extension://${new URL(worker.url()).host}/${view}.html`);
     await enableAutomaticBackups(page);
+    if (view === 'backups') await page.locator('.status-summary').click();
     const time = page.locator('.status-card:visible .status-times time').first();
+    await expect(page.locator('.status-card:visible .status-times time')).toHaveCount(1);
     await expect(time).toHaveText('20 seconds ago');
     await expect(page.locator('.status-card:visible .status-title')).toContainText('Changes waiting for the next backup');
     await expect(page.locator('.status-card:visible .scheduled-backup time')).toHaveText('in 23 hours');

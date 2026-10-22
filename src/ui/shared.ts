@@ -57,7 +57,7 @@ export function brand(): HTMLElement
   return item;
 }
 
-export function createStatusView(action?: HTMLButtonElement)
+export function createStatusView({ expandable = false }: { expandable?: boolean } = {})
 {
   const element = el('section', 'status-card');
   element.setAttribute('aria-label', 'Backup status');
@@ -85,16 +85,14 @@ export function createStatusView(action?: HTMLButtonElement)
   const saved = el('span', '', 'Last saved ');
   const savedTime = timestamp(null);
   saved.append(savedTime);
-  const checked = el('span', '', 'Last checked ');
-  const checkedTime = timestamp(null);
-  checked.append(checkedTime);
-  times.append(saved, checked);
-  if (action) {
-    const content = el('div', 'automatic-status-content');
-    content.append(title, description, times);
-    const wrapper = el('div', 'automatic-status-wrapper');
-    wrapper.append(content, action);
-    element.append(wrapper);
+  times.append(saved);
+  if (expandable) {
+    // keep status and warnings visible while timestamps can be expanded
+    const details = el('details', 'status-details');
+    const summary = el('summary', 'status-summary');
+    summary.append(title, description, icon(icons.ChevronDown));
+    details.append(summary, times);
+    element.append(details);
   } else element.append(title, description, times);
   return {
     element,
@@ -128,7 +126,6 @@ export function createStatusView(action?: HTMLButtonElement)
       resumeAt.hidden = suspended !== 'paused';
       setTimestamp(resumeTime, suspended === 'paused' ? automatic.pausedUntil : null);
       setTimestamp(savedTime, metadata.lastSavedAt);
-      setTimestamp(checkedTime, metadata.lastCheckedAt);
     },
   };
 }

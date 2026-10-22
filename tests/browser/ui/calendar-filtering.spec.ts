@@ -130,7 +130,9 @@ test('backup calendar filters both lists, preserves sorting, and retries a faile
     await app.page.evaluate(() => document.dispatchEvent(new Event('release-date-history')));
     await expect(savedPanel.locator('.history-rows')).toHaveJSProperty('inert', false);
     await expect(savedPanel.locator('.backup-title')).toHaveCount(5);
-    await savedPanel.getByRole('button', { name: 'Load more', exact: true }).click();
+    await savedPanel.getByRole('button', { name: 'Show more', exact: true }).click();
+    await expect(savedPanel.locator('.backup-title')).toHaveCount(10);
+    await savedPanel.getByRole('button', { name: 'Show more', exact: true }).click();
     await expect(savedPanel.locator('.backup-title')).toHaveCount(14);
     await expect(automaticPanel.locator('.backup-row').first()).toBeVisible();
     await savedPanel.getByRole('button', { name: /^Date,/ }).click();

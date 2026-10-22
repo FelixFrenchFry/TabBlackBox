@@ -24,7 +24,7 @@ test('automatic controls persist and paused/off status appears in popup without 
   await expect(automaticSaved).toHaveText('Settings have been saved');
   await expect(automaticSaved).toHaveText('Settings have been saved');
   await enabled.uncheck();
-  await expect(page.locator('.settings-card .status-card').getByText('Automatic backups are off', { exact: true })).toBeVisible();
+  await expect(page.locator('.settings-card .status-card')).toHaveCount(0);
   await expect(automaticSaved).toHaveText('Settings have been saved');
   await page.reload();
   await expect(automaticSaved).toBeEmpty();
@@ -35,8 +35,8 @@ test('automatic controls persist and paused/off status appears in popup without 
   await manual.click();
   await expect(manual).toHaveText('Saved');
   await expect(manual).toBeEnabled();
+  await expect(page.getByRole('region', { name: 'Backup status' }).getByText('Automatic backups are off', { exact: true })).toBeVisible();
   await page.getByRole('link', { name: 'Settings', exact: true }).click();
-  await expect(page.locator('.settings-card .status-card').getByText('Automatic backups are off', { exact: true })).toBeVisible();
   const popup = await context.newPage();
   await popup.goto(origin + '/popup.html');
   await expect(popup.getByText('Automatic backups are off')).toBeVisible();

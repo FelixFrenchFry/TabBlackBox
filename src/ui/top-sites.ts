@@ -49,8 +49,10 @@ export function createTopSites()
   const message = el('div', 'calendar-message');
   message.setAttribute('role', 'status');
   const list = el('ol', 'top-sites-list');
+  const footer = el('div', 'top-sites-other');
+  footer.hidden = true;
   content.append(toolbar, message, list);
-  details.append(heading, content);
+  details.append(heading, content, footer);
   element.append(details);
 
   let scope = readTopSitesScope();
@@ -58,7 +60,7 @@ export function createTopSites()
   let loadedKey = '';
   let pendingKey = '';
   let generation = 0;
-  // websites listed above the other websites row, grown in steps of the initial list
+  // websites listed above the footer, grown in steps of the initial list
   let shown = TOP_SITES_LIMIT;
   let rendered = '';
 
@@ -75,7 +77,9 @@ export function createTopSites()
     if (signature === rendered) return;
     rendered = signature;
     const active = document.activeElement;
-    const focused = active instanceof HTMLElement && list.contains(active) ? active : null;
+    const focused = active instanceof HTMLElement && (list.contains(active) || footer.contains(active)) ? active : null;
+    footer.replaceChildren();
+    footer.hidden = true;
     totals.textContent = `${count(data.total, scope === 'open' ? 'tab' : 'page')} on ${count(data.siteCount, 'website')}`;
     if (!data.total) {
       list.replaceChildren(el('li', 'muted top-sites-empty', 'No backups yet'));
@@ -103,12 +107,12 @@ export function createTopSites()
       row.append(site, track, amount);
       return row;
     });
-    // summarize websites beyond the list in one row that lists the next ones or returns to the initial list
+    // keep expansion controls and the remaining counts in a footer below the list
     const otherSites = data.siteCount - data.sites.length;
     // follow the listed websites so the controls match the reply even when it holds fewer than requested
     const expanded = data.sites.length > TOP_SITES_LIMIT;
     if (otherSites > 0 || expanded) {
-      const row = el('li', 'top-sites-row top-sites-other');
+      footer.hidden = false;
       const fewer = expanded ? button('Show fewer', icons.ChevronDown, 'top-sites-toggle top-sites-fewer') : null;
       fewer?.addEventListener('click', () => expand(TOP_SITES_LIMIT));
       if (otherSites > 0) {
@@ -116,22 +120,19 @@ export function createTopSites()
         const more = el('button', 'top-sites-toggle top-sites-more');
         more.type = 'button';
         more.title = `Show ${Math.min(TOP_SITES_LIMIT, otherSites)} more`;
-        const glyph = el('span', 'tab-favicon');
-        glyph.append(icon(icons.ChevronDown));
-        more.append(glyph, el('span', 'top-sites-name', count(otherSites, 'other website')));
+        more.append(icon(icons.ChevronDown), el('span', 'top-sites-name', count(otherSites, 'other website')));
         more.addEventListener('click', () => expand(data.sites.length + TOP_SITES_LIMIT));
-        // keep both controls together across the name and bar columns
+        // keep both controls together beside the remaining counts
         const controls = el('span', 'top-sites-toggles');
         controls.append(more, ...(fewer ? [fewer] : []));
-        row.append(controls, el('span', 'top-sites-count', `${formatNumber(otherCount)} · ${share(otherCount, data.total)}`));
-      } else if (fewer) row.append(fewer);
-      rows.push(row);
+        footer.append(controls, el('span', 'top-sites-count', `${formatNumber(otherCount)} · ${share(otherCount, data.total)}`));
+      } else if (fewer) footer.append(fewer);
     }
     list.replaceChildren(...rows);
     // move focus from a replaced control to its replacement or to the remaining one
     if (focused) {
       const selector = focused.classList.contains('top-sites-fewer') ? '.top-sites-fewer' : '.top-sites-more';
-      (list.querySelector<HTMLButtonElement>(selector) ?? list.querySelector<HTMLButtonElement>('.top-sites-toggle') ?? heading).focus();
+      (footer.querySelector<HTMLButtonElement>(selector) ?? footer.querySelector<HTMLButtonElement>('.top-sites-toggle') ?? heading).focus();
     }
   }
 

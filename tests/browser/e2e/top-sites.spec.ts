@@ -26,6 +26,7 @@ test('lists top websites of the latest backup and of all backups', async ({ exte
   await sites.getByRole('button', { name: 'All backups' }).click();
   await expect(sites).toContainText(/pages? on \d+ websites?/);
   await expect(site.locator('.top-sites-count')).toHaveText(/^2 · \d+%$/);
+  await expect(sites.locator('.top-sites-other')).toBeHidden();
   await page.screenshot({ path: testInfo.outputPath('top-sites.png') });
   await page.reload();
   await expect(sites.getByRole('button', { name: 'All backups' })).toHaveAttribute('aria-pressed', 'true');
@@ -53,24 +54,36 @@ test('lists more websites in steps and returns to the initial list', async ({ ex
   await page.goto(`chrome-extension://${new URL(worker.url()).host}/backups.html#statistics`);
   await enableAutomaticBackups(page);
   const sites = page.locator('.top-sites');
-  const rows = sites.locator('.top-sites-row:not(.top-sites-other)');
+  const rows = sites.locator('.top-sites-row');
   const other = sites.locator('.top-sites-other');
   const more = other.locator('.top-sites-more');
   const fewer = other.getByRole('button', { name: 'Show fewer' });
   await expect(rows).toHaveCount(10);
   await expect(more).toHaveText('15 other websites');
   await expect(fewer).toHaveCount(0);
+  const panelBox = await sites.boundingBox();
+  const footerBox = await other.boundingBox();
+  if (!panelBox || !footerBox) throw new Error('Missing top websites panel or footer');
+  expect(footerBox.x).toBeCloseTo(panelBox.x + 1, 1);
+  expect(footerBox.width).toBeCloseTo(panelBox.width - 2, 1);
+  await expect(other).toHaveCSS('border-top-width', '1px');
   await more.click();
   await expect(rows).toHaveCount(20);
   await expect(more).toHaveText('5 other websites');
   await expect(more).toBeFocused();
   // numbering continues across the added websites
   await expect(rows.nth(10).locator('.top-sites-rank')).toHaveText('11');
-  // the row lists the remaining websites beside the control that returns to the initial list
+  // the footer lists the remaining websites beside the control that returns to the initial list
   await expect(fewer).toBeVisible();
   await expect.poll(async () => (await more.boundingBox())?.y === (await fewer.boundingBox())?.y).toBe(true);
   await rows.nth(2).hover();
   await sites.screenshot({ path: testInfo.outputPath('top-sites-expanded.png') });
+  await page.setViewportSize({ width: 400, height: 900 });
+  await expect(more).toBeVisible();
+  await expect(fewer).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await sites.screenshot({ path: testInfo.outputPath('top-sites-footer-narrow.png') });
+  await page.setViewportSize({ width: 1200, height: 900 });
   await more.press('Enter');
   await expect(rows).toHaveCount(25);
   await expect(more).toHaveCount(0);

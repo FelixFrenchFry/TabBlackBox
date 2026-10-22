@@ -52,13 +52,10 @@ nav.append(active, statisticsLink, settingsLink);
 const main = el('main', 'history-main');
 const heading = el('div', 'page-heading');
 const titles = el('div', 'page-titles');
-// share the title row with tab search
-const titleRow = el('div', 'page-title-row');
-titleRow.append(el('h1', '', 'Backups'));
-titles.append(titleRow, el('p', 'muted', 'Browse manual and automatic browser session backups. Expand a backup to view its tabs, windows, and tab groups, open individual URLs, or restore the session.'));
+titles.append(el('h1', '', 'Backups'), el('p', 'muted', 'Browse manual and automatic browser session backups. Expand a backup to view its tabs, windows, and tab groups, open individual URLs, or restore the session.'));
 const backup = createBackupButton(() => { void refresh('backup'); });
 heading.append(titles);
-const statusCard = createStatusView();
+const statusCard = createStatusView({ expandable: true });
 const status = statusCard.element;
 const feedback = el('div');
 feedback.setAttribute('aria-live', 'polite');
@@ -133,16 +130,21 @@ function historyPanel(collection: Collection)
   const dateFeedback = el('div', 'history-date-feedback');
   dateFeedback.hidden = true;
   dateFeedback.setAttribute('aria-live', 'polite');
-  const more = button('Load more', icons.ChevronDown, 'button load-more');
+  const pagination = el('div', 'history-pagination');
+  pagination.hidden = true;
+  const more = button('Show more', icons.ChevronDown, 'history-pagination-button');
   more.hidden = true;
+  const fewer = button('Show fewer', icons.ChevronDown, 'history-pagination-button history-pagination-fewer');
+  fewer.hidden = true;
+  pagination.append(more, fewer);
   list.append(header);
   if (collection === 'saved') list.append(toolbar);
   content.append(dateFeedback, rows);
-  list.append(content);
-  element.append(list, more);
+  list.append(content, pagination);
+  element.append(list);
   const items: Summary[] = [];
   const filter: { loadedRange: HistoryRange | null; loadedTabUrl: string | null; loadedSearch: SearchHighlight<SearchField> | null } = { loadedRange: null, loadedTabUrl: null, loadedSearch: null };
-  return { element, list, content, header, toolbar, sortButtons, updateSort, sort, loadedSort: sort, rememberSort: false, count, usage, dateFeedback, rows, more, collection, query: '', tag: null as string | null, items, ...filter, generation: 0, sessionRows: new Map<string, ReturnType<typeof row>>() };
+  return { element, list, content, header, toolbar, sortButtons, updateSort, sort, loadedSort: sort, rememberSort: false, count, usage, dateFeedback, rows, pagination, more, fewer, collection, query: '', tag: null as string | null, items, ...filter, generation: 0, sessionRows: new Map<string, ReturnType<typeof row>>() };
 }
 
 const savedPanel = historyPanel('saved');
@@ -158,7 +160,8 @@ const tabChart = createTabChart();
 const topSites = createTopSites();
 const statistics = createStatisticsView(tabChart.element, topSites.element);
 const tabSearch = createTabSearch({ label: tabLabel, show: filterByTab });
-titleRow.append(tabSearch.element);
+const statusSearch = el('div', 'status-search');
+statusSearch.append(tabSearch.element, status);
 const tabFilter = el('div', 'tab-filter');
 tabFilter.hidden = true;
 const tabFilterLabel = el('p');
@@ -182,7 +185,7 @@ savedPanel.toolbar.prepend(searchGroup);
 savedPanel.toolbar.append(backup.element, exportAll, importSessions);
 const footer = el('footer', 'history-footer');
 footer.append(icon(icons.HardDrive), el('span', '', 'Backups stay on this device. Automatic backups are removed as needed. Manual backups stay until deleted explicitly. Export them to keep an external copy.'));
-main.append(heading, status, feedback, calendar.element, tabFilter, ...panels.map(panel => panel.element), footer);
+main.append(heading, statusSearch, feedback, calendar.element, tabFilter, ...panels.map(panel => panel.element), footer);
 const settings = createSettingsView(() => toast.show('Settings have been saved'));
 root.append(header, nav, main, statistics.element, settings.element, toast.element);
 
@@ -1120,6 +1123,20 @@ function renderHistory(panel: ReturnType<typeof historyPanel>): void
   }
 }
 
+function updateHistoryPagination(panel: ReturnType<typeof historyPanel>, hasMore: boolean): void
+{
+  const { more, fewer, pagination, items } = panel;
+  const active = document.activeElement;
+  more.disabled = false;
+  fewer.disabled = false;
+  more.hidden = !hasMore;
+  fewer.hidden = items.length <= HISTORY_INITIAL_LIMIT;
+  pagination.hidden = more.hidden && fewer.hidden;
+  // keep keyboard focus on the remaining control when a page boundary hides one
+  if (active === more && more.hidden && !fewer.hidden) fewer.focus();
+  else if (active === fewer && fewer.hidden && !more.hidden) more.focus();
+}
+
 async function loadHistory(panel: ReturnType<typeof historyPanel>, reset: boolean, preserveLoaded = false): Promise<void>
 {
   const { items, more, sessionRows, sort, query, tag } = panel;
@@ -1132,7 +1149,9 @@ async function loadHistory(panel: ReturnType<typeof historyPanel>, reset: boolea
   const externalSort = sortChanged && !rememberSort;
   const generation = reset ? ++panel.generation : panel.generation;
   const last = reset ? undefined : items.at(-1);
+  const focused = document.activeElement === more ? more : document.activeElement === panel.fewer ? panel.fewer : null;
   more.disabled = true;
+  panel.fewer.disabled = true;
   // retain the list height while preventing interaction with a different day's rows
   panel.rows.inert = rangeChanged;
   panel.dateFeedback.hidden = !rangeChanged;
@@ -1170,7 +1189,7 @@ async function loadHistory(panel: ReturnType<typeof historyPanel>, reset: boolea
     panel.dateFeedback.hidden = true;
     renderHistory(panel);
     updateDialogButtons();
-    more.hidden = page.length < pageLimit;
+    updateHistoryPagination(panel, page.length === pageLimit);
     panel.loadedSort = sort;
     if (externalSort) panel.updateSort(sort);
     // remember successful user selections without republishing another page's choice
@@ -1203,7 +1222,15 @@ async function loadHistory(panel: ReturnType<typeof historyPanel>, reset: boolea
       throw error;
     }
   } finally {
-    if (generation === panel.generation) more.disabled = panel.sort !== panel.loadedSort || panel.loadedRange?.start !== historyRange?.start || panel.loadedRange?.end !== historyRange?.end || panel.loadedTabUrl !== historyTabUrl;
+    if (generation === panel.generation) {
+      more.disabled = panel.sort !== panel.loadedSort || panel.loadedRange?.start !== historyRange?.start || panel.loadedRange?.end !== historyRange?.end || panel.loadedTabUrl !== historyTabUrl;
+      panel.fewer.disabled = more.disabled;
+      // restore pagination focus after loading unless the user focused another control
+      if (focused && document.activeElement === document.body) {
+        const target = focused.hidden ? more.hidden ? panel.fewer : more : focused;
+        if (!target.hidden && !target.disabled) target.focus();
+      }
+    }
   }
 }
 
@@ -1220,6 +1247,7 @@ function resetHistoryFilters(): void
   for (const panel of panels) {
     panel.generation++;
     panel.more.disabled = true;
+    panel.fewer.disabled = true;
   }
 }
 
@@ -1308,6 +1336,15 @@ const refresh = createRefreshQueue(async kind =>
 }, value => { backingUp = value; updateSave(); updateDialogButtons(); });
 for (const panel of panels) {
   panel.more.addEventListener('click', () => { void loadHistory(panel, false).catch(showError); });
+  panel.fewer.addEventListener('click', () => {
+    if (panel.fewer.disabled) return;
+    // collapse only the displayed rows and keep their loaded filters and order
+    panel.generation++;
+    panel.items = panel.items.slice(0, Math.max(HISTORY_INITIAL_LIMIT, panel.items.length - HISTORY_PAGE_LIMIT));
+    renderHistory(panel);
+    updateDialogButtons();
+    updateHistoryPagination(panel, true);
+  });
   for (const { property, element } of panel.sortButtons) element.addEventListener('click', () => {
     const current = panel.rememberSort ? panel.sort : panel.loadedSort;
     const sort: HistorySort = property === 'date'

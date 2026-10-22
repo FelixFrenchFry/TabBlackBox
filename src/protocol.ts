@@ -8,7 +8,7 @@ import { parseTopSitesScope } from './sites';
 import { parseSessionDetails, parseSessionName, parseSessionTags, SESSION_NAME_LIMIT } from './archive';
 
 export const HISTORY_INITIAL_LIMIT = 5;
-export const HISTORY_PAGE_LIMIT = 10;
+export const HISTORY_PAGE_LIMIT = 5;
 export const TAB_SEARCH_INITIAL_LIMIT = 5;
 export const TAB_SEARCH_PAGE_LIMIT = 10;
 export const TAB_URL_LIMIT = 2_097_152;

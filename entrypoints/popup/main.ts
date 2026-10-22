@@ -7,12 +7,10 @@ import { privacyLink } from '../../src/ui/privacy';
 
 const root = setup();
 const header = el('header', 'popup-header');
-const headerActions = el('div', 'popup-header-actions');
-const settings = button('', icons.Settings, 'button icon-button');
+const settings = button('', icons.Settings, 'button invisible icon-button');
 settings.setAttribute('aria-label', 'Settings');
 settings.title = 'Settings';
-headerActions.append(el('span', 'badge', 'Local'), settings);
-header.append(brand(), headerActions);
+header.append(brand(), settings);
 const content = el('main', 'popup-content');
 const statusCard = createStatusView();
 const status = statusCard.element;
