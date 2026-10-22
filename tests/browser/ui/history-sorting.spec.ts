@@ -71,13 +71,13 @@ for (const superseded of [false, true]) {
       if (superseded) await panel.getByRole('button', { name: /^Number,/ }).click();
       await expect(names).toHaveText(previous);
       await expect(more).toBeDisabled();
-      await expect(panel.getByRole('button', { name: 'Show fewer', exact: true })).toBeDisabled();
+      await expect(panel.getByRole('button', { name: 'Show less', exact: true })).toBeDisabled();
       await app.page.evaluate(() => document.dispatchEvent(new Event('release-sort')));
       await expect(app.page.locator('main:visible').getByText('Temporary sort failure')).toBeVisible();
       await expect(names).toHaveText(previous);
       await expect(date).toHaveAttribute('aria-label', 'Date, newest first. Sort oldest first');
       await expect(more).toBeEnabled();
-      await expect(panel.getByRole('button', { name: 'Show fewer', exact: true })).toBeEnabled();
+      await expect(panel.getByRole('button', { name: 'Show less', exact: true })).toBeEnabled();
       expect(await app.page.evaluate(() => localStorage.getItem('tabblackbox.history-sort.saved'))).toBe(stored);
       await more.click();
       await expect(names).toHaveCount(15);

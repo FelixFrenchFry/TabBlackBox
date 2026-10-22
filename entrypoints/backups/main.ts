@@ -134,7 +134,7 @@ function historyPanel(collection: Collection)
   pagination.hidden = true;
   const more = button('Show more', icons.ChevronDown, 'history-pagination-button');
   more.hidden = true;
-  const fewer = button('Show fewer', icons.ChevronDown, 'history-pagination-button history-pagination-fewer');
+  const fewer = button('Show less', icons.ChevronDown, 'history-pagination-button history-pagination-fewer');
   fewer.hidden = true;
   pagination.append(more, fewer);
   list.append(header);
@@ -1338,9 +1338,9 @@ for (const panel of panels) {
   panel.more.addEventListener('click', () => { void loadHistory(panel, false).catch(showError); });
   panel.fewer.addEventListener('click', () => {
     if (panel.fewer.disabled) return;
-    // collapse only the displayed rows and keep their loaded filters and order
+    // collapse the displayed rows back to the initial page and keep their loaded filters and order
     panel.generation++;
-    panel.items = panel.items.slice(0, Math.max(HISTORY_INITIAL_LIMIT, panel.items.length - HISTORY_PAGE_LIMIT));
+    panel.items = panel.items.slice(0, HISTORY_INITIAL_LIMIT);
     renderHistory(panel);
     updateDialogButtons();
     updateHistoryPagination(panel, true);

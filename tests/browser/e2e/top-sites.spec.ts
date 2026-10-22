@@ -57,7 +57,7 @@ test('lists more websites in steps and returns to the initial list', async ({ ex
   const rows = sites.locator('.top-sites-row');
   const other = sites.locator('.top-sites-other');
   const more = other.locator('.top-sites-more');
-  const fewer = other.getByRole('button', { name: 'Show fewer' });
+  const fewer = other.getByRole('button', { name: 'Show less' });
   await expect(rows).toHaveCount(10);
   await expect(more).toHaveText('15 other websites');
   await expect(fewer).toHaveCount(0);

@@ -113,7 +113,7 @@ export function createTopSites()
     const expanded = data.sites.length > TOP_SITES_LIMIT;
     if (otherSites > 0 || expanded) {
       footer.hidden = false;
-      const fewer = expanded ? button('Show fewer', icons.ChevronDown, 'top-sites-toggle top-sites-fewer') : null;
+      const fewer = expanded ? button('Show less', icons.ChevronDown, 'top-sites-toggle top-sites-fewer') : null;
       fewer?.addEventListener('click', () => expand(TOP_SITES_LIMIT));
       if (otherSites > 0) {
         const otherCount = data.total - data.sites.reduce((total, item) => total + item.count, 0);

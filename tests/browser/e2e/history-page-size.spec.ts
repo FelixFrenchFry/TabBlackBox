@@ -18,7 +18,7 @@ test('history expands in pages and collapses without changing its filters or sor
   const panel = page.getByRole('region', { name: 'Manual backups', exact: true });
   await expect(panel.locator('.backup-row')).toHaveCount(5);
   const more = panel.getByRole('button', { name: 'Show more', exact: true });
-  const fewer = panel.getByRole('button', { name: 'Show fewer', exact: true });
+  const fewer = panel.getByRole('button', { name: 'Show less', exact: true });
   await expect(fewer).toBeHidden();
   for (let count = 10; count <= 80; count += 5) {
     await more.click();
@@ -28,10 +28,8 @@ test('history expands in pages and collapses without changing its filters or sor
   await expect(more).toBeHidden();
   await expect(fewer).toBeFocused();
   expect(await panel.locator('.backup-counts > .muted').allTextContents()).toEqual([...Array.from({ length: 79 }, (_, index) => `1 window · ${80 - index} tabs`), '1 window · 1 tab']);
-  for (let count = 75; count >= 5; count -= 5) {
-    await fewer.click();
-    await expect(panel.locator('.backup-row')).toHaveCount(count);
-  }
+  await fewer.click();
+  await expect(panel.locator('.backup-row')).toHaveCount(5);
   await expect(more).toBeFocused();
   await expect(fewer).toBeHidden();
   await more.click();

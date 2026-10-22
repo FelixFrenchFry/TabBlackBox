@@ -58,12 +58,10 @@ test('refresh keeps an expanded older session and pagination remains ordered', a
     expect(counts).toEqual([...Array.from({ length: 50 }, (_, index) => `1 window · ${51 - index} tabs`), '1 window · 1 tab']);
     const panel = app.page.getByRole('region', { name: 'Automatic backups', exact: true });
     const more = panel.getByRole('button', { name: 'Show more', exact: true });
-    const fewer = panel.getByRole('button', { name: 'Show fewer', exact: true });
+    const fewer = panel.getByRole('button', { name: 'Show less', exact: true });
     await expect(fewer).toBeFocused();
-    for (const count of [46, 41, 36, 31, 26, 21, 16, 11, 6, 5]) {
-      await fewer.click();
-      await expect(panel.locator('.backup-row')).toHaveCount(count);
-    }
+    await fewer.click();
+    await expect(panel.locator('.backup-row')).toHaveCount(5);
     await expect(more).toBeFocused();
     await expect(fewer).toBeHidden();
     await more.click();
