@@ -19,6 +19,9 @@ function withTimeZone(zone: string, check: () => void): void
   finally { process.env.TZ = previous ?? hostTimeZone; }
 }
 
+// mutation runs use threads, which cannot switch time zones
+const zoneFixed = process.env.TABBLACKBOX_MUTATION === '1';
+
 it('scales non-empty days by thirds without splitting equal counts', () => {
   const thresholds = (counts: number[]) => calendarScale(counts).map(band => band.maximum);
   const counts = [1000, 0, 80, 40, 70, 50, 60, 90, 100, 0];
@@ -43,7 +46,7 @@ it('spreads color bands across the palette and uses a medium green for equal day
   expect(calendarScale([1, 1, 1, 1, 1, 1, 2, 1000]).map(band => band.level)).toEqual([1, 3]);
 });
 
-it('uses local calendar boundaries across daylight saving and year changes', () => {
+it.skipIf(zoneFixed)('uses local calendar boundaries across daylight saving and year changes', () => {
   withTimeZone('Europe/Berlin', () => {
     const spring = dayRange(new Date(2026, 2, 29, 12).getTime());
     const autumn = dayRange(new Date(2026, 9, 25, 12).getTime());
@@ -55,7 +58,7 @@ it('uses local calendar boundaries across daylight saving and year changes', () 
   });
 });
 
-it('keeps adjacent day ranges aligned when daylight saving skips midnight', () => {
+it.skipIf(zoneFixed)('keeps adjacent day ranges aligned when daylight saving skips midnight', () => {
   withTimeZone('America/Santiago', () => {
     const day = dayRange(new Date(2026, 8, 6, 12).getTime());
     const next = dayRange(new Date(2026, 8, 7, 12).getTime());

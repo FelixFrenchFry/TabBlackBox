@@ -1,0 +1,753 @@
+{
+  "version": 9,
+  "stores": {
+    "imports": [],
+    "metadata": [
+      [
+        "state",
+        {
+          "privacyAcceptedAt": 1789377600000,
+          "automatic": {
+            "enabled": true,
+            "intervalMinutes": 15,
+            "pausedUntil": null
+          },
+          "settings": {
+            "retentionDays": 30,
+            "maxBackups": 200,
+            "maxStorageMB": 250
+          },
+          "restore": {
+            "unloadBackgroundTabs": true,
+            "unloadThreshold": 40
+          },
+          "latestId": "61b0db0e-f235-41eb-abc8-58b972f5e1d0",
+          "lastSavedAt": 1789382400000,
+          "lastCheckedAt": 1789382400000,
+          "bytes": 3912,
+          "automaticBytes": 2221,
+          "savedBytes": 2544,
+          "count": 7,
+          "operation": {
+            "kind": "completed",
+            "finishedAt": 1789383660000,
+            "snapshotId": "f562e3c6-64da-48a6-b7a8-66a141d44407",
+            "startedAt": 1789383600000,
+            "opened": 4,
+            "skipped": 1,
+            "failed": 1,
+            "groupErrors": 0,
+            "total": 6,
+            "errors": [
+              "Could not open chrome://settings/"
+            ],
+            "name": "Kept from history",
+            "issues": [
+              {
+                "kind": "tab",
+                "title": "Settings",
+                "url": "chrome://settings/",
+                "message": "Browser pages cannot be restored."
+              }
+            ]
+          },
+          "lastTabId": 13,
+          "lastSessionNumbers": {
+            "automatic": 4,
+            "manual": 4
+          },
+          "historyRevision": 3
+        }
+      ]
+    ],
+    "snapshots": [
+      [
+        "3f17214a-051e-4f4d-9766-9443ea87397e",
+        {
+          "windows": [
+            {
+              "groups": [
+                {
+                  "name": "Research",
+                  "color": "blue",
+                  "collapsed": false
+                },
+                {
+                  "name": "Später lesen 📚",
+                  "color": "orange",
+                  "collapsed": true
+                }
+              ],
+              "tabs": [
+                1,
+                2,
+                3,
+                4
+              ]
+            },
+            {
+              "groups": [],
+              "tabs": [
+                5,
+                5,
+                6,
+                7,
+                8,
+                9
+              ]
+            }
+          ],
+          "id": "3f17214a-051e-4f4d-9766-9443ea87397e",
+          "number": 1,
+          "name": null,
+          "capturedAt": 1789378200000,
+          "source": "automatic",
+          "tabIds": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9
+          ]
+        }
+      ],
+      [
+        "61b0db0e-f235-41eb-abc8-58b972f5e1d0",
+        {
+          "windows": [
+            {
+              "groups": [
+                {
+                  "name": "",
+                  "color": "grey",
+                  "collapsed": false
+                }
+              ],
+              "tabs": [
+                12
+              ]
+            }
+          ],
+          "id": "61b0db0e-f235-41eb-abc8-58b972f5e1d0",
+          "number": 3,
+          "name": null,
+          "capturedAt": 1789382400000,
+          "source": "manual",
+          "savedAt": 1789382400000,
+          "tabIds": [
+            12
+          ],
+          "changes": {
+            "previousId": "a4982aa8-f328-470c-b4ff-34b9b814d59e",
+            "opened": [
+              [
+                0
+              ]
+            ],
+            "closed": [
+              []
+            ],
+            "closedWindows": [
+              [
+                1,
+                2,
+                3,
+                4
+              ],
+              [
+                5,
+                5,
+                6,
+                7,
+                8
+              ]
+            ]
+          },
+          "tags": [
+            "single"
+          ]
+        }
+      ],
+      [
+        "9933ae3c-6f0c-424b-a784-43136d28e229",
+        {
+          "windows": [
+            {
+              "groups": [
+                {
+                  "name": "Research",
+                  "color": "blue",
+                  "collapsed": false
+                },
+                {
+                  "name": "Später lesen 📚",
+                  "color": "orange",
+                  "collapsed": true
+                }
+              ],
+              "tabs": [
+                1,
+                2,
+                3,
+                4,
+                11
+              ]
+            },
+            {
+              "groups": [],
+              "tabs": [
+                5,
+                5,
+                6,
+                7,
+                8,
+                9
+              ]
+            }
+          ],
+          "id": "9933ae3c-6f0c-424b-a784-43136d28e229",
+          "number": 4,
+          "name": null,
+          "capturedAt": 1789380900000,
+          "source": "automatic",
+          "tabIds": [
+            1,
+            2,
+            3,
+            4,
+            11,
+            5,
+            6,
+            7,
+            8,
+            9
+          ],
+          "changes": {
+            "previousId": "b67f0519-18ba-42b7-89cb-683d2895e3a0",
+            "opened": [
+              [
+                4
+              ],
+              []
+            ],
+            "closed": [
+              [
+                {
+                  "tab": 10,
+                  "after": 3
+                }
+              ],
+              []
+            ],
+            "closedWindows": []
+          }
+        }
+      ],
+      [
+        "a4982aa8-f328-470c-b4ff-34b9b814d59e",
+        {
+          "windows": [
+            {
+              "groups": [
+                {
+                  "name": "Research",
+                  "color": "blue",
+                  "collapsed": false
+                },
+                {
+                  "name": "Später lesen 📚",
+                  "color": "orange",
+                  "collapsed": true
+                }
+              ],
+              "tabs": [
+                1,
+                2,
+                3,
+                4
+              ]
+            },
+            {
+              "groups": [],
+              "tabs": [
+                5,
+                5,
+                6,
+                7,
+                8,
+                9
+              ]
+            }
+          ],
+          "id": "a4982aa8-f328-470c-b4ff-34b9b814d59e",
+          "number": 2,
+          "name": "Quarterly review ✓",
+          "capturedAt": 1789381800000,
+          "source": "manual",
+          "savedAt": 1789381800000,
+          "tabIds": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9
+          ],
+          "changes": {
+            "previousId": "f562e3c6-64da-48a6-b7a8-66a141d44407",
+            "opened": [
+              [],
+              [
+                0,
+                1,
+                2,
+                3,
+                4
+              ]
+            ],
+            "closed": [
+              [],
+              []
+            ],
+            "closedWindows": []
+          }
+        }
+      ],
+      [
+        "abfd834e-02ce-4651-aafa-6909bf74055c",
+        {
+          "windows": [
+            {
+              "groups": [],
+              "tabs": [
+                13
+              ]
+            }
+          ],
+          "name": "Imported session",
+          "capturedAt": 1789291800000,
+          "source": "automatic",
+          "tags": [
+            "import"
+          ],
+          "id": "abfd834e-02ce-4651-aafa-6909bf74055c",
+          "number": 4,
+          "savedAt": 1789383000000,
+          "tabIds": [
+            13
+          ]
+        }
+      ],
+      [
+        "b67f0519-18ba-42b7-89cb-683d2895e3a0",
+        {
+          "windows": [
+            {
+              "groups": [
+                {
+                  "name": "Research",
+                  "color": "blue",
+                  "collapsed": false
+                },
+                {
+                  "name": "Später lesen 📚",
+                  "color": "orange",
+                  "collapsed": true
+                }
+              ],
+              "tabs": [
+                1,
+                2,
+                3,
+                4,
+                10
+              ]
+            },
+            {
+              "groups": [],
+              "tabs": [
+                5,
+                5,
+                6,
+                7,
+                8,
+                9
+              ]
+            }
+          ],
+          "id": "b67f0519-18ba-42b7-89cb-683d2895e3a0",
+          "number": 2,
+          "name": null,
+          "capturedAt": 1789379100000,
+          "source": "automatic",
+          "tabIds": [
+            1,
+            2,
+            3,
+            4,
+            10,
+            5,
+            6,
+            7,
+            8,
+            9
+          ],
+          "changes": {
+            "previousId": "3f17214a-051e-4f4d-9766-9443ea87397e",
+            "opened": [
+              [
+                4
+              ],
+              []
+            ],
+            "closed": [
+              [],
+              []
+            ],
+            "closedWindows": []
+          }
+        }
+      ],
+      [
+        "f562e3c6-64da-48a6-b7a8-66a141d44407",
+        {
+          "windows": [
+            {
+              "groups": [
+                {
+                  "name": "Research",
+                  "color": "blue",
+                  "collapsed": false
+                },
+                {
+                  "name": "Später lesen 📚",
+                  "color": "orange",
+                  "collapsed": true
+                }
+              ],
+              "tabs": [
+                1,
+                2,
+                3,
+                4
+              ]
+            }
+          ],
+          "id": "f562e3c6-64da-48a6-b7a8-66a141d44407",
+          "number": 1,
+          "name": "Kept from history",
+          "capturedAt": 1789380000000,
+          "source": "automatic",
+          "tabIds": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "savedAt": 1789381200000,
+          "tags": [
+            "research",
+            "kept"
+          ],
+          "changes": {
+            "previousId": "abfd834e-02ce-4651-aafa-6909bf74055c",
+            "opened": [
+              [
+                0,
+                1,
+                2,
+                3
+              ]
+            ],
+            "closed": [
+              []
+            ],
+            "closedWindows": [
+              [
+                13
+              ]
+            ]
+          }
+        }
+      ]
+    ],
+    "summaries": [
+      [
+        "3f17214a-051e-4f4d-9766-9443ea87397e",
+        {
+          "id": "3f17214a-051e-4f4d-9766-9443ea87397e",
+          "number": 1,
+          "name": null,
+          "capturedAt": 1789378200000,
+          "source": "automatic",
+          "windowCount": 2,
+          "tabCount": 10,
+          "supportedCount": 8,
+          "bytes": 310
+        }
+      ],
+      [
+        "61b0db0e-f235-41eb-abc8-58b972f5e1d0",
+        {
+          "id": "61b0db0e-f235-41eb-abc8-58b972f5e1d0",
+          "number": 3,
+          "name": null,
+          "capturedAt": 1789382400000,
+          "source": "manual",
+          "savedAt": 1789382400000,
+          "tags": [
+            "single"
+          ],
+          "windowCount": 1,
+          "tabCount": 1,
+          "supportedCount": 1,
+          "bytes": 370,
+          "changeCounts": {
+            "previousId": "a4982aa8-f328-470c-b4ff-34b9b814d59e",
+            "opened": 1,
+            "closed": 9
+          }
+        }
+      ],
+      [
+        "9933ae3c-6f0c-424b-a784-43136d28e229",
+        {
+          "id": "9933ae3c-6f0c-424b-a784-43136d28e229",
+          "number": 4,
+          "name": null,
+          "capturedAt": 1789380900000,
+          "source": "automatic",
+          "windowCount": 2,
+          "tabCount": 11,
+          "supportedCount": 9,
+          "bytes": 451,
+          "changeCounts": {
+            "previousId": "b67f0519-18ba-42b7-89cb-683d2895e3a0",
+            "opened": 1,
+            "closed": 1
+          }
+        }
+      ],
+      [
+        "a4982aa8-f328-470c-b4ff-34b9b814d59e",
+        {
+          "id": "a4982aa8-f328-470c-b4ff-34b9b814d59e",
+          "number": 2,
+          "name": "Quarterly review ✓",
+          "capturedAt": 1789381800000,
+          "source": "manual",
+          "savedAt": 1789381800000,
+          "windowCount": 2,
+          "tabCount": 10,
+          "supportedCount": 8,
+          "bytes": 475,
+          "changeCounts": {
+            "previousId": "f562e3c6-64da-48a6-b7a8-66a141d44407",
+            "opened": 5,
+            "closed": 0
+          }
+        }
+      ],
+      [
+        "abfd834e-02ce-4651-aafa-6909bf74055c",
+        {
+          "id": "abfd834e-02ce-4651-aafa-6909bf74055c",
+          "number": 4,
+          "name": "Imported session",
+          "capturedAt": 1789291800000,
+          "source": "automatic",
+          "savedAt": 1789383000000,
+          "tags": [
+            "import"
+          ],
+          "windowCount": 1,
+          "tabCount": 1,
+          "supportedCount": 1,
+          "bytes": 210
+        }
+      ],
+      [
+        "b67f0519-18ba-42b7-89cb-683d2895e3a0",
+        {
+          "id": "b67f0519-18ba-42b7-89cb-683d2895e3a0",
+          "number": 2,
+          "name": null,
+          "capturedAt": 1789379100000,
+          "source": "automatic",
+          "windowCount": 2,
+          "tabCount": 11,
+          "supportedCount": 9,
+          "bytes": 431,
+          "changeCounts": {
+            "previousId": "3f17214a-051e-4f4d-9766-9443ea87397e",
+            "opened": 1,
+            "closed": 0
+          }
+        }
+      ],
+      [
+        "f562e3c6-64da-48a6-b7a8-66a141d44407",
+        {
+          "id": "f562e3c6-64da-48a6-b7a8-66a141d44407",
+          "number": 1,
+          "name": "Kept from history",
+          "capturedAt": 1789380000000,
+          "source": "automatic",
+          "savedAt": 1789381200000,
+          "tags": [
+            "research",
+            "kept"
+          ],
+          "windowCount": 1,
+          "tabCount": 4,
+          "supportedCount": 4,
+          "bytes": 463,
+          "changeCounts": {
+            "previousId": "abfd834e-02ce-4651-aafa-6909bf74055c",
+            "opened": 4,
+            "closed": 1
+          }
+        }
+      ]
+    ],
+    "tabs": [
+      [
+        1,
+        {
+          "id": 1,
+          "url": "https://example.com/",
+          "title": "Example Domain",
+          "pinned": true,
+          "group": null
+        }
+      ],
+      [
+        2,
+        {
+          "id": 2,
+          "url": "https://example.org/search?q=tab+backup&lang=en#results",
+          "title": "Search: \"tab backup\" & more",
+          "pinned": false,
+          "group": 0
+        }
+      ],
+      [
+        3,
+        {
+          "id": 3,
+          "url": "https://example.org/docs/a%20b/(draft)",
+          "title": "Docs <draft> [v2]",
+          "pinned": false,
+          "group": 0
+        }
+      ],
+      [
+        4,
+        {
+          "id": 4,
+          "url": "https://例え.テスト/パス?名前=値",
+          "title": "Unicode ページ",
+          "pinned": false,
+          "group": 1
+        }
+      ],
+      [
+        5,
+        {
+          "id": 5,
+          "url": "https://example.net/",
+          "title": "Duplicate",
+          "pinned": false,
+          "group": null
+        }
+      ],
+      [
+        6,
+        {
+          "id": 6,
+          "url": "file:///C:/Users/test/notes.txt",
+          "title": "notes.txt",
+          "pinned": false,
+          "group": null
+        }
+      ],
+      [
+        7,
+        {
+          "id": 7,
+          "url": "chrome://settings/",
+          "title": "Settings",
+          "pinned": false,
+          "group": null
+        }
+      ],
+      [
+        8,
+        {
+          "id": 8,
+          "url": "about:blank",
+          "title": "",
+          "pinned": false,
+          "group": null
+        }
+      ],
+      [
+        9,
+        {
+          "id": 9,
+          "url": null,
+          "title": "Tab without address",
+          "pinned": false,
+          "group": null
+        }
+      ],
+      [
+        10,
+        {
+          "id": 10,
+          "url": "https://example.com/new",
+          "title": "Opened later",
+          "pinned": false,
+          "group": 1
+        }
+      ],
+      [
+        11,
+        {
+          "id": 11,
+          "url": "https://example.com/last",
+          "title": "Newest",
+          "pinned": false,
+          "group": null
+        }
+      ],
+      [
+        12,
+        {
+          "id": 12,
+          "url": "https://example.com/only",
+          "title": "Only tab",
+          "pinned": true,
+          "group": 0
+        }
+      ],
+      [
+        13,
+        {
+          "id": 13,
+          "url": "https://import.example/",
+          "title": "Imported",
+          "pinned": false,
+          "group": null
+        }
+      ]
+    ]
+  }
+}

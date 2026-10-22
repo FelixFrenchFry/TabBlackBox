@@ -2,6 +2,8 @@ import { defineConfig } from 'wxt';
 
 export default defineConfig({
   imports: false,
+  // source maps only for coverage builds
+  vite: () => ({ build: { sourcemap: process.env.TABBLACKBOX_COVERAGE === '1' ? 'inline' : false } }),
   manifest: {
     name: 'TabBlackBox',
     description: 'Automatic backups, versioning, and restoration of browser tabs and sessions.',

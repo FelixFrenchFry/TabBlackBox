@@ -83,3 +83,10 @@ temp/
 *.tmp
 *.bak
 *.swp
+
+# older extension build used by update tests
+.baseline/
+
+# mutation testing
+.stryker-tmp/
+reports/

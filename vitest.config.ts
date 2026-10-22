@@ -13,6 +13,11 @@ export default defineConfig({
       include: ['src/**/*.ts', 'entrypoints/**/*.ts'],
       reporter: ['text', 'html', 'lcov', 'json-summary'],
       reportsDirectory: 'coverage',
+      // fail if coverage drops, the UI is measured by the browser tests
+      thresholds: {
+        'src/*.ts': { statements: 95, branches: 93, functions: 95, lines: 97 },
+        'entrypoints/background.ts': { statements: 80, branches: 60, functions: 80, lines: 80 },
+      },
     },
   },
 });

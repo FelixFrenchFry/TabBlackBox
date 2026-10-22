@@ -2,20 +2,23 @@ import { test as base, expect, chromium, type BrowserContext } from '@playwright
 import { createServer } from 'node:http';
 import { resolve } from 'node:path';
 import { enableAutomaticBackups } from './automatic';
+import { trackCoverage } from './coverage';
 
 export type ExtensionOptions = Pick<NonNullable<Parameters<typeof chromium.launchPersistentContext>[1]>, 'viewport' | 'locale' | 'hasTouch' | 'ignoreDefaultArgs'>;
 export type ExtensionContext = (options?: ExtensionOptions) => Promise<BrowserContext>;
 type ExtensionFixtures = { extensionContext: ExtensionContext };
 type WorkerFixtures = { testServer: string };
 
-export async function launchExtension(profile: string, options: ExtensionOptions = {}): Promise<BrowserContext>
+// loads the current build unless another one is passed
+export async function launchExtension(profile: string, options: ExtensionOptions = {}, extension = resolve('.output/chrome-mv3')): Promise<BrowserContext>
 {
-  const extension = resolve('.output/chrome-mv3');
-  return chromium.launchPersistentContext(profile, {
+  const context = await chromium.launchPersistentContext(profile, {
     channel: 'chromium', headless: true,
     args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`],
     ...options,
   });
+  await trackCoverage(context);
+  return context;
 }
 
 // an empty profile path launches a temporary profile that is removed when the context closes

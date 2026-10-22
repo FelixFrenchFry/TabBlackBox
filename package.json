@@ -11,18 +11,21 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run --project unit --project integration",
     "test:install-browser": "node scripts/install-test-browser.mjs",
-    "pretest:e2e": "wxt build",
+    "pretest:e2e": "wxt build && node scripts/build-baseline.mjs",
     "test:e2e": "playwright test --project e2e",
-    "verify": "wxt build && tsc --noEmit && vitest run --coverage && playwright test",
+    "verify": "wxt build && node scripts/build-baseline.mjs && tsc --noEmit && vitest run --coverage && playwright test",
     "test:unit": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
     "test:coverage": "vitest run --project unit --project integration --coverage",
     "pretest:package": "wxt build",
     "test:package": "vitest run --project package",
-    "pretest:browser": "wxt build",
+    "pretest:browser": "wxt build && node scripts/build-baseline.mjs",
     "test:browser": "playwright test",
     "pretest:ui": "wxt build",
-    "test:ui": "playwright test --project ui"
+    "test:ui": "playwright test --project ui",
+    "test:baseline": "node scripts/build-baseline.mjs",
+    "test:browser:coverage": "node scripts/browser-coverage.mjs",
+    "test:mutation": "stryker run"
   },
   "dependencies": {
     "@primer/primitives": "^11.10.0",
@@ -30,11 +33,15 @@
     "lucide": "^1.44.0"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
     "@playwright/test": "^1.63.0",
+    "@stryker-mutator/core": "^10.0.0",
     "@types/chrome": "^0.2.9",
     "@types/node": "^22.20.2",
     "@vitest/coverage-v8": "^5.0.0",
     "fake-indexeddb": "^6.2.5",
+    "fast-check": "^4.10.2",
+    "monocart-coverage-reports": "^3.0.0",
     "typescript": "^7.0.2",
     "vitest": "^5.0.0",
     "wxt": "^0.21.4"

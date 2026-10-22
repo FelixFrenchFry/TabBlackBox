@@ -5,8 +5,16 @@ on:
   pull_request:
   workflow_dispatch:
     inputs:
+      windows:
+        description: Also run the tests on Windows
+        type: boolean
+        default: false
       macos:
-        description: Also run the tests on macOS
+        description: Also run the tests on MacOS
+        type: boolean
+        default: false
+      mutation:
+        description: Also run mutation testing
         type: boolean
         default: false
 
@@ -19,27 +27,21 @@ concurrency:
 
 jobs:
   tests:
-    name: ${{ matrix.platform.name }} / Node 24 / Chromium
-    runs-on: ${{ matrix.platform.os }}
+    name: ${{ matrix.platform == 'windows' && 'Windows' || matrix.platform == 'macos' && 'MacOS' || 'Ubuntu' }} / Node 24 / Chromium
+    runs-on: ${{ matrix.platform }}-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
-      # total of 2 combinations (2 operating systems)
+      # Ubuntu always, Windows and MacOS only when explicitly enabled
       matrix:
-        platform:
-          # Ubuntu on the latest runner image
-          - name: Ubuntu
-            os: ubuntu-latest
-            artifact: ubuntu
-          # Windows Server on the latest runner image
-          - name: Windows
-            os: windows-latest
-            artifact: windows
+        platform: ${{ fromJSON(format('["ubuntu"{0}{1}]', inputs.windows && ',"windows"' || '', inputs.macos && ',"macos"' || '')) }}
     steps:
       - name: Check out source
         uses: actions/checkout@v7
         with:
           persist-credentials: false
+          # the update test builds an older commit
+          fetch-depth: 0
 
       - name: Set up Node
         uses: actions/setup-node@v7
@@ -58,8 +60,21 @@ jobs:
         if: runner.os == 'Linux'
         run: npx playwright install-deps chromium
 
+      # source maps for browser coverage
       - name: Build extension
         run: npm run build
+        env:
+          TABBLACKBOX_COVERAGE: '1'
+
+      # reuse the old build until the baseline commit changes
+      - name: Restore baseline build
+        uses: actions/cache@v4
+        with:
+          path: .baseline
+          key: baseline-${{ runner.os }}-${{ hashFiles('scripts/build-baseline.mjs') }}
+
+      - name: Build baseline extension
+        run: npm run test:baseline
 
       - name: Check types
         run: npm run typecheck
@@ -68,15 +83,17 @@ jobs:
       - name: Run Vitest tests
         run: npx vitest run --coverage
 
-      # ui and e2e tests load the built extension into headless Chromium
+      # ui and e2e tests in headless Chromium with page coverage
       - name: Run Playwright tests
         run: npx playwright test
+        env:
+          TABBLACKBOX_COVERAGE: '1'
 
       - name: Upload test reports
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
-          name: test-reports-${{ matrix.platform.artifact }}
+          name: test-reports-${{ matrix.platform }}
           path: |
             coverage/
             playwright-report/
@@ -84,12 +101,12 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  # run on macOS only when requested for a manual run
-  macos:
-    name: macOS / Node 24 / Chromium
-    if: github.event_name == 'workflow_dispatch' && inputs.macos
-    runs-on: macos-latest
-    timeout-minutes: 30
+  # optional mutation testing
+  mutation:
+    name: Mutation testing
+    if: github.event_name == 'workflow_dispatch' && inputs.mutation
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
     steps:
       - name: Check out source
         uses: actions/checkout@v7
@@ -105,32 +122,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # download Playwright Chromium into .test-browsers
-      - name: Install test browser
-        run: npm run test:install-browser
+      - name: Run Stryker
+        run: npm run test:mutation -- --concurrency 4
 
-      - name: Build extension
-        run: npm run build
-
-      - name: Check types
-        run: npm run typecheck
-
-      # unit, integration, package tests with coverage
-      - name: Run Vitest tests
-        run: npx vitest run --coverage
-
-      # ui and e2e tests load the built extension into headless Chromium
-      - name: Run Playwright tests
-        run: npx playwright test
-
-      - name: Upload test reports
+      - name: Upload mutation report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
-          name: test-reports-macos
-          path: |
-            coverage/
-            playwright-report/
-            test-results/
+          name: mutation-report
+          path: reports/mutation/
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: 14

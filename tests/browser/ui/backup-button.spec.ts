@@ -48,8 +48,9 @@ for (const view of ['popup', 'backups']) test(`${view} shares backup button stat
   if (view === 'backups') {
     await page.getByRole('link', { name: 'Settings', exact: true }).click();
     await expect(page.locator('.backup-button:visible')).toHaveCount(0);
-    await expect(page.locator('.status-title strong:visible')).toHaveText('Current tabs backed up manually');
+    await expect(page.locator('.status-title strong')).toBeHidden();
     await page.getByRole('link', { name: 'Backups', exact: true }).click();
+    await expect(page.locator('.status-title strong:visible')).toHaveText('Current tabs backed up manually');
   }
   await save.evaluate(element => (element as HTMLButtonElement).click());
   await expect(page.locator('html')).toHaveAttribute('data-backup-requests', '1');

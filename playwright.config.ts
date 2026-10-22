@@ -5,6 +5,9 @@ process.env.PLAYWRIGHT_BROWSERS_PATH ??= resolve('.test-browsers');
 
 export default defineConfig({
   testDir: './tests/browser',
+  // page coverage when TABBLACKBOX_COVERAGE is set
+  globalSetup: './tests/browser/coverage-setup.ts',
+  globalTeardown: './tests/browser/coverage-teardown.ts',
   projects: [
     { name: 'ui', testMatch: 'ui/**/*.spec.ts' },
     { name: 'e2e', testMatch: 'e2e/**/*.spec.ts' },
