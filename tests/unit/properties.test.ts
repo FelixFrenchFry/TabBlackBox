@@ -46,14 +46,14 @@ describe('archive validation', () =>
     }));
   });
 
-  it('rejects arbitrary JSON with a validation error', () =>
+  it('accepts or rejects arbitrary JSON without crashing', () =>
   {
     fc.assert(fc.property(fc.jsonValue(), value => {
       try { parseArchive(value); } catch (error) { expectValidationError(error); }
     }));
   });
 
-  it('rejects archives with one field replaced by an arbitrary value', () =>
+  it('accepts or rejects arbitrary field replacements consistently', () =>
   {
     const paths = fc.constantFrom('format', 'version', 'sessions', 's.windows', 's.name', 's.capturedAt', 's.source', 's.tags', 'w.groups', 'w.tabs', 't.url', 't.title', 't.pinned', 't.group', 'g.name', 'g.color', 'g.collapsed');
     fc.assert(fc.property(archive, paths, fc.jsonValue(), (value, path, replacement) => {
@@ -72,6 +72,46 @@ describe('archive validation', () =>
       }
       // an accepted replacement must still parse the same
       expect(parseArchive(JSON.parse(JSON.stringify(parsed)))).toEqual(parsed);
+    }));
+  });
+
+  it.each<[string, unknown[]]>([
+    ['format', [null, false, 0, 'other']],
+    ['version', [null, false, 0, 2, '1']],
+    ['sessions', [null, {}, []]],
+    ['s.windows', [null, {}, []]],
+    ['s.name', [false, 1, {}, 'x'.repeat(101)]],
+    ['s.capturedAt', [null, '0', -1, 0.5, 8_640_000_000_000_001]],
+    ['s.source', [null, 0, 'other']],
+    ['s.tags', [false, 0, {}, [null], ['x'.repeat(31)], Array.from({ length: 11 }, (_, index) => String(index))]],
+    ['w.groups', [null, {}]],
+    ['w.tabs', [null, {}, []]],
+    ['t.url', [0, false, {}]],
+    ['t.title', [null, 0, false]],
+    ['t.pinned', [null, 0, 'false']],
+    ['t.group', [-1, 0.5, Number.MAX_SAFE_INTEGER, '0']],
+    ['g.name', [null, 0, false]],
+    ['g.color', [null, 0, 'other']],
+    ['g.collapsed', [null, 0, 'false']],
+  ])('rejects invalid %s values', (path, replacements) =>
+  {
+    fc.assert(fc.property(archive, fc.constantFrom(...replacements), (value, replacement) => {
+      const copy = structuredClone(value);
+      const session = copy.sessions[0];
+      const window = session?.windows[0];
+      if (!session || !window) throw new Error('Fixture missing');
+      // exercise group fields even when the generated window has no groups
+      if (!window.groups.length) window.groups.push({ name: 'Work', color: 'blue', collapsed: false });
+      const target = path === 'format' || path === 'version' || path === 'sessions' ? copy : path.startsWith('s.') ? session : path.startsWith('w.') ? window : path.startsWith('t.') ? window.tabs[0] : window.groups[0];
+      if (!target) throw new Error('Fixture missing');
+      Object.assign(target, { [path.replace(/^\w\./, '')]: replacement });
+      try {
+        parseArchive(copy);
+      } catch (error) {
+        expectValidationError(error);
+        return;
+      }
+      expect.unreachable('Invalid value was accepted');
     }));
   });
 });

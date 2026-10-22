@@ -4,6 +4,8 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     include: ['tests/unit/**/*.test.ts', 'tests/integration/**/*.test.ts'],
+    // tooling tests depend on files outside the mutation sandbox
+    exclude: ['tests/unit/browser-coverage.test.ts', 'tests/unit/build-baseline.test.ts'],
     setupFiles: ['tests/support/integration.ts'],
     // threads start faster but cannot switch time zones
     pool: 'threads',
