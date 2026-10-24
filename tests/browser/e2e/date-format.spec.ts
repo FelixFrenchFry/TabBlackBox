@@ -1,6 +1,10 @@
 import { test, expect } from '../fixtures/extension';
 import { enableAutomaticBackups } from '../fixtures/automatic';
 
+// British English dates such as "24 Oct 2026" instead of the German "24. Okt. 2026"
+const englishDate = /\b\d{1,2} (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sept?|Oct|Nov|Dec) 20\d{2}\b/;
+const englishMonth = /^(January|February|March|April|May|June|July|August|September|October|November|December) 20\d{2}$/;
+
 test('date format updates both views and persists after reload', async ({ extensionContext }) =>
 {
   const context = await extensionContext({ locale: 'de-DE' });
@@ -20,7 +24,7 @@ test('date format updates both views and persists after reload', async ({ extens
   const time = popup.locator('time:visible').first();
   await expect.poll(async () => time.textContent()).toMatch(/ago|now/);
   await time.focus();
-  await expect(popup.getByRole('tooltip')).toHaveText(/20[0-9]{2}/);
+  await expect(popup.getByRole('tooltip')).toHaveText(englishDate);
   await expect(time).toHaveAttribute('aria-describedby', 'timestamp-tooltip');
   await expect(time).not.toHaveAttribute('title');
   await page.reload();
@@ -32,7 +36,12 @@ test('date format updates both views and persists after reload', async ({ extens
   await popup.reload();
   await expect(popup.locator('time:visible').first()).toHaveText(/20[0-9]{2}.*[(].*(ago|now)[)]/);
   await dropdown.selectOption('exact');
-  await expect(time).toHaveText(/20[0-9]{2}/);
+  await expect(time).toHaveText(englishDate);
   await popup.reload();
-  await expect(popup.locator('time:visible').first()).toHaveText(/20[0-9]{2}/);
+  await expect(popup.locator('time:visible').first()).toHaveText(englishDate);
+  // the backup calendar names months and weekdays in English for a German browser
+  const backups = await context.newPage();
+  await backups.goto(origin + '/backups.html');
+  await expect(backups.locator('.calendar-month').first()).toHaveText(englishMonth);
+  expect(await backups.locator('.calendar-month-group').first().locator('.calendar-weekday').allTextContents()).toEqual(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']);
 });

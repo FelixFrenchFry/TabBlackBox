@@ -113,6 +113,18 @@ describe('transactional backups', () =>
     } finally { await repository.close(); }
   });
 
+  it('refuses to export when only automatic backups exist', async () =>
+  {
+    const repository = new Repository(crypto.randomUUID());
+    try {
+      await expect(repository.exportSaved(() => {})).rejects.toThrow('No manual backups are available to export.');
+      await repository.capture(session, 'automatic', 1000);
+      const exported = vi.fn();
+      await expect(repository.exportSaved(exported)).rejects.toThrow('No manual backups are available to export.');
+      expect(exported).not.toHaveBeenCalled();
+    } finally { await repository.close(); }
+  });
+
   it('checks missing tab records on each export', async () =>
   {
     const name = crypto.randomUUID();

@@ -116,6 +116,8 @@ it('validates automatic preferences and merges independent updates', async () =>
     await repository.setAutomaticSettings({ kind: 'frequency', value: 5 }, Date.now());
     await repository.setAutomaticSettings({ kind: 'enabled', value: false }, Date.now());
     expect((await repository.metadata()).automatic).toEqual({ enabled: false, intervalMinutes: 5, pausedUntil: null });
+    await expect(repository.setAutomaticSettings({ kind: 'pause', minutes: 15 }, Date.now())).rejects.toThrow('Enable automatic backups before pausing them.');
+    expect((await repository.metadata()).automatic.pausedUntil).toBeNull();
   } finally { await repository.close(); }
 });
 it('preserves manual backup failures while automatic backups are disabled', async () => {

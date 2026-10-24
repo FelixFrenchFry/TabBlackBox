@@ -38,6 +38,29 @@ describe('message boundary', () =>
     }
   });
 
+  it('accepts only supported automatic backup settings and drops extra fields', () =>
+  {
+    const valid = [
+      { kind: 'enabled', value: true }, { kind: 'enabled', value: false },
+      ...[0, 1, 5, 15, 60, 1440].map(value => ({ kind: 'frequency', value })),
+      ...[15, 60, 1440].map(minutes => ({ kind: 'pause', minutes })),
+      { kind: 'resume' },
+    ];
+    for (const update of valid) {
+      expect(parseRequest({ kind: 'automatic-settings', update: { ...update, extra: 1 } })).toEqual({ kind: 'automatic-settings', update });
+    }
+    const invalid = [
+      null, undefined, 'resume', 15, {}, { value: true }, { kind: '' }, { kind: 'disabled' },
+      { kind: 'enabled' }, { kind: 'enabled', value: 'true' }, { kind: 'enabled', value: 1 }, { kind: 'enabled', minutes: true },
+      { kind: 'frequency' }, { kind: 'frequency', minutes: 15 }, ...[2, -1, 15.5, '15', null, Infinity, true].map(value => ({ kind: 'frequency', value })),
+      { kind: 'pause' }, { kind: 'pause', value: 15 }, { kind: 'pause', value: false }, { kind: 'resumed' }, ...[0, 1, 5, 30, '60', null].map(minutes => ({ kind: 'pause', minutes })),
+    ];
+    for (const update of invalid) {
+      expect(() => parseRequest({ kind: 'automatic-settings', update })).toThrow('Invalid automatic backup setting.');
+    }
+    expect(() => parseRequest({ kind: 'automatic-settings' })).toThrow('Invalid request');
+  });
+
   it('accepts tab searches and exact page filters within the URL length limit', () =>
   {
     expect(parseRequest({ kind: 'tab-search', query: 'docs example', limit: 10 })).toEqual({ kind: 'tab-search', query: 'docs example', limit: 10 });

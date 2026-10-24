@@ -94,6 +94,31 @@ it('replaces the retry alarm of an older pending update', async () =>
   expect(app.alarms).toEqual(new Set(['apply-update:0.3.0']));
 });
 
+it('keeps unrelated alarms and retries a deferred update every minute', async () =>
+{
+  const app = await launch(async () => [{ url: `${ownOrigin}backups.html` }]);
+  app.alarms.add('reconcile-session');
+  await app.update();
+  expect(app.alarms).toEqual(new Set(['reconcile-session', 'apply-update:0.2.0']));
+  expect(chrome.alarms.create).toHaveBeenCalledWith('apply-update:0.2.0', { periodInMinutes: 1 });
+});
+
+it('waits for the next retry when backup work is queued while checking tabs', async () =>
+{
+  let app: Awaited<ReturnType<typeof launch>> | undefined;
+  let queued = false;
+  app = await launch(async () => {
+    // a reconcile alarm queues a capture while the open tabs are being checked
+    if (!queued && app) { queued = true; await app.alarm('reconcile-session'); }
+    return [];
+  });
+  await app.update();
+  expect(app.reload).not.toHaveBeenCalled();
+  expect(app.alarms).toEqual(new Set(['apply-update:0.2.0']));
+  await app.alarm('apply-update:0.2.0');
+  expect(app.reload).toHaveBeenCalledOnce();
+});
+
 it('clears a retry alarm without reloading once its version is installed', async () =>
 {
   const app = await launch(async () => [], '0.2.0');
