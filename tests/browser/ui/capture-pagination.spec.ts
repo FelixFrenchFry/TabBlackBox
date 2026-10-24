@@ -22,12 +22,12 @@ test('refresh keeps an expanded older session and pagination remains ordered', a
       const original = chrome.runtime.sendMessage.bind(chrome.runtime);
       Object.defineProperty(chrome.runtime, 'sendMessage', { value: async (message: Request): Promise<Reply> =>
       {
-        const newest = document.documentElement.dataset.newHistory === 'true' ? 51 : 50;
+        const newest = document.documentElement.dataset.newHistory === 'true' ? 151 : 150;
         if (message.kind === 'history') {
           if (message.collection === 'saved') return { ok: true, data: { kind: 'history', items: [], count: 0, bytes: 0, more: false } };
           const first = message.before ? message.before.capturedAt - 1 : newest;
-          const items = Array.from({ length: Math.min(5, first) }, (_, index) => ({ id: `saved-${first - index}`, number: first - index, name: null, capturedAt: first - index, source: 'automatic' as const, windowCount: 1, tabCount: first - index, supportedCount: 1, bytes: 100 }));
-          return { ok: true, data: { kind: 'history', items, count: newest, bytes: newest * 100, more: first > 5 } };
+          const items = Array.from({ length: Math.min(50, first) }, (_, index) => ({ id: `saved-${first - index}`, number: first - index, name: null, capturedAt: first - index, source: 'automatic' as const, windowCount: 1, tabCount: first - index, supportedCount: 1, bytes: 100 }));
+          return { ok: true, data: { kind: 'history', items, count: newest, bytes: newest * 100, more: first > 50 } };
         }
         if (message.kind === 'snapshot') return { ok: true, data: { kind: 'snapshot', snapshot: { id: message.id, number: 1, name: null, capturedAt: 1, source: 'automatic', windows: [{ groups: [], tabs: [{ url: 'about:blank', title: 'Saved page', pinned: false, group: null }] }] } } };
         const reply: Reply = await original(message);
@@ -36,43 +36,74 @@ test('refresh keeps an expanded older session and pagination remains ordered', a
       } });
     });
     await app.page.reload();
-    await expect(app.page.locator('.backup-row')).toHaveCount(5);
-    await app.page.getByRole('button', { name: 'Show more' }).click();
-    await expect(app.page.locator('.backup-row')).toHaveCount(10);
+    const rows = app.page.locator('.automatic-backups .history-rows');
+    const scrollToEnd = () => rows.evaluate(element => { element.scrollTo(0, element.scrollHeight); element.dispatchEvent(new Event('scroll')); });
+    await expect(app.page.locator('.backup-row')).toHaveCount(50);
+    await scrollToEnd();
+    await expect(app.page.locator('.backup-row')).toHaveCount(100);
     const older = app.page.locator('.backup-row').last();
     await older.evaluate(element => element.setAttribute('data-older-session', 'true'));
     await older.locator('summary').click();
     const retained = app.page.locator('[data-older-session]');
     await expect(retained.locator('.tab-title')).toHaveText('Saved page');
+    // a refresh reloads every page up to the expanded session and keeps it open
     await app.page.evaluate(() => { document.documentElement.dataset.newHistory = 'true'; });
-    await expect(app.page.locator('.backup-row').first()).toContainText('51 tabs');
+    await expect(app.page.locator('.backup-row').first()).toContainText('151 tabs');
     await expect(retained.locator('details')).toHaveAttribute('open', '');
     await expect(retained.locator('.tab-title')).toHaveText('Saved page');
-    await expect(app.page.locator('.backup-row')).toHaveCount(15);
-    for (const count of [20, 25, 30, 35, 40, 45, 50, 51]) {
-      await app.page.getByRole('button', { name: 'Show more' }).click();
-      await expect(app.page.locator('.backup-row')).toHaveCount(count);
-    }
-    await expect(app.page.getByRole('button', { name: 'Show more' })).toBeHidden();
+    await expect.poll(() => app.page.locator('.backup-row').count()).toBeGreaterThanOrEqual(150);
+    await scrollToEnd();
+    await expect(app.page.locator('.backup-row')).toHaveCount(151);
     const counts = await app.page.locator('.backup-counts > .muted').allTextContents();
-    expect(counts).toEqual([...Array.from({ length: 50 }, (_, index) => `1 window · ${51 - index} tabs`), '1 window · 1 tab']);
-    const panel = app.page.getByRole('region', { name: 'Automatic backups', exact: true });
-    const more = panel.getByRole('button', { name: 'Show more', exact: true });
-    const fewer = panel.getByRole('button', { name: 'Show less', exact: true });
-    await expect(fewer).toBeFocused();
-    await fewer.click();
-    await expect(panel.locator('.backup-row')).toHaveCount(5);
-    await expect(more).toBeFocused();
-    await expect(fewer).toBeHidden();
-    await more.click();
-    await expect(panel.locator('.backup-row')).toHaveCount(10);
-    await expect(fewer).toBeVisible();
-    await more.click();
-    await expect(panel.locator('.backup-row')).toHaveCount(15);
-    await expect(retained.locator('details')).toHaveCount(0);
+    expect(counts).toEqual([...Array.from({ length: 150 }, (_, index) => `1 window · ${151 - index} tabs`), '1 window · 1 tab']);
     await app.page.evaluate(() => { document.documentElement.dataset.newHistory = 'false'; });
-    await expect(app.page.locator('.backup-row').first()).toContainText('50 tabs');
-    await expect(app.page.locator('.backup-row details[open]')).toHaveCount(0);
+    await expect(app.page.locator('.backup-row').first()).toContainText('150 tabs');
+  } finally { await app.context.close(); }
+});
+
+test('refresh keeps the rows scrolled into view beyond the first page', async ({ extensionContext }) =>
+{
+  const app = await launch(extensionContext);
+  try {
+    await app.page.addInitScript(() =>
+    {
+      const original = chrome.runtime.sendMessage.bind(chrome.runtime);
+      Object.defineProperty(chrome.runtime, 'sendMessage', { value: async (message: Request): Promise<Reply> =>
+      {
+        const newest = document.documentElement.dataset.newHistory === 'true' ? 151 : 150;
+        if (message.kind === 'history') {
+          if (message.collection === 'saved') return { ok: true, data: { kind: 'history', items: [], count: 0, bytes: 0, more: false } };
+          const first = message.before ? message.before.capturedAt - 1 : newest;
+          const items = Array.from({ length: Math.min(50, first) }, (_, index) => ({ id: `saved-${first - index}`, number: first - index, name: null, capturedAt: first - index, source: 'automatic' as const, windowCount: 1, tabCount: first - index, supportedCount: 1, bytes: 100 }));
+          return { ok: true, data: { kind: 'history', items, count: newest, bytes: newest * 100, more: first > 50 } };
+        }
+        const reply: Reply = await original(message);
+        if (reply.ok && reply.data.kind === 'overview') reply.data.overview.metadata.latestId = `saved-${newest}`;
+        return reply;
+      } });
+    });
+    await app.page.reload();
+    const rows = app.page.locator('.automatic-backups .history-rows');
+    const scrollToEnd = () => rows.evaluate(element => { element.scrollTo(0, element.scrollHeight); element.dispatchEvent(new Event('scroll')); });
+    await expect(app.page.locator('.backup-row')).toHaveCount(50);
+    await scrollToEnd();
+    await expect(app.page.locator('.backup-row')).toHaveCount(100);
+    await scrollToEnd();
+    await expect(app.page.locator('.backup-row')).toHaveCount(150);
+    // read the tab count of the first row at the top of the scrolled list
+    const topRow = () => rows.evaluate(element => {
+      const top = element.getBoundingClientRect().top;
+      const row = [...element.querySelectorAll('.backup-row')].find(candidate => candidate.getBoundingClientRect().bottom > top + 1);
+      return row?.querySelector('.backup-counts > .muted')?.textContent ?? null;
+    });
+    await rows.evaluate(element => { element.scrollTop = 120 * 41; });
+    const before = await topRow();
+    expect(before).not.toBeNull();
+    // a new automatic backup above keeps the deep rows loaded and the same row at the top
+    await app.page.evaluate(() => { document.documentElement.dataset.newHistory = 'true'; });
+    await expect(app.page.locator('.backup-row').first()).toContainText('151 tabs');
+    await expect.poll(() => app.page.locator('.backup-row').count()).toBeGreaterThanOrEqual(150);
+    expect(await topRow()).toBe(before);
   } finally { await app.context.close(); }
 });
 
@@ -136,7 +167,7 @@ for (const failOldRequest of [false, true]) {
               await new Promise<void>(resolve => document.addEventListener('release-older', () => resolve(), { once: true }));
               if (fail) return { ok: false, error: 'Stale pagination failure' };
             }
-            return { ok: true, data: { kind: 'history', count: newest, bytes: newest * 100, more: first > 5, items: Array.from({ length: 5 }, (_, index) => ({ id: `saved-${first - index}`, number: first - index, name: null, capturedAt: first - index, source: 'automatic', windowCount: 1, tabCount: first - index, supportedCount: 1, bytes: 100 })) } };
+            return { ok: true, data: { kind: 'history', count: newest, bytes: newest * 100, more: first > 50, items: Array.from({ length: Math.min(50, first) }, (_, index) => ({ id: `saved-${first - index}`, number: first - index, name: null, capturedAt: first - index, source: 'automatic', windowCount: 1, tabCount: first - index, supportedCount: 1, bytes: 100 })) } };
           }
           const reply: Reply = await original(message);
           if (reply.ok && reply.data.kind === 'overview') reply.data.overview.metadata.latestId = document.documentElement.dataset.newHistory === 'true' ? 'new' : 'old';
@@ -144,8 +175,10 @@ for (const failOldRequest of [false, true]) {
         } });
       }, failOldRequest);
       await app.page.reload();
-      await expect(app.page.locator('.backup-row')).toHaveCount(5);
-      await app.page.getByRole('button', { name: 'Show more' }).click();
+      const rows = app.page.locator('.automatic-backups .history-rows');
+      const scrollToEnd = () => rows.evaluate(element => { element.scrollTo(0, element.scrollHeight); element.dispatchEvent(new Event('scroll')); });
+      await expect(app.page.locator('.backup-row')).toHaveCount(50);
+      await scrollToEnd();
       await expect(app.page.locator('html')).toHaveAttribute('data-older-waiting', 'true');
       await app.page.evaluate(() => { document.documentElement.dataset.newHistory = 'true'; });
       await expect(app.page.locator('.backup-row').first()).toContainText('101 tabs');
@@ -154,12 +187,11 @@ for (const failOldRequest of [false, true]) {
         document.dispatchEvent(new Event('release-older'));
         await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
       });
-      await expect(app.page.locator('.backup-row')).toHaveCount(5);
       await expect(app.page.getByText('Stale pagination failure')).toHaveCount(0);
-      await app.page.getByRole('button', { name: 'Show more' }).click();
-      await expect(app.page.locator('.backup-row')).toHaveCount(10);
+      // the next page follows the reset history instead of the discarded old page
+      await expect.poll(async () => { await scrollToEnd(); return app.page.locator('.backup-row').count(); }).toBe(101);
       const counts = await app.page.locator('.backup-counts > .muted').allTextContents();
-      expect(counts).toEqual(Array.from({ length: 10 }, (_, index) => `1 window · ${101 - index} tabs`));
+      expect(counts).toEqual([...Array.from({ length: 100 }, (_, index) => `1 window · ${101 - index} tabs`), '1 window · 1 tab']);
     } finally { await app.context.close(); }
   });
 }

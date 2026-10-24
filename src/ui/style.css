@@ -129,21 +129,24 @@ p { margin-top: 6px; }
 .top-sites-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .top-sites-bar { display: block; min-width: 8px; height: 8px; border-radius: 4px; background: var(--fgColor-accent, #0969da); }
 .top-sites-count { text-align: right; white-space: nowrap; }
-.top-sites-other, .history-pagination { display: flex; align-items: center; gap: 12px; padding: 4px 16px; border-top: 1px solid var(--borderColor-default); color: var(--fgColor-muted); }
-.history-pagination { gap: 8px; }
+.top-sites-other { display: flex; align-items: center; gap: 12px; padding: 4px 16px; border-top: 1px solid var(--borderColor-default); color: var(--fgColor-muted); }
 .top-sites-other > .top-sites-count { margin-left: auto; }
 .top-sites-toggles { display: flex; flex: 1; align-items: center; gap: 8px; min-width: 0; }
-.top-sites-toggles > .top-sites-toggle + .top-sites-toggle, .history-pagination-button + .history-pagination-button { margin-left: 0; }
-.top-sites-toggle, .history-pagination-button { display: inline-flex; justify-self: start; align-items: center; gap: 4px; min-width: 0; max-width: calc(100% + 8px); min-height: 24px; margin-left: -8px; padding: 0 8px; border: 0; border-radius: 4px; background: transparent; color: inherit; white-space: nowrap; }
-.top-sites-toggle:hover, .history-pagination-button:hover:not(:disabled) { background: var(--bgColor-neutral-muted); color: var(--fgColor-default); }
+.top-sites-toggles > .top-sites-toggle + .top-sites-toggle { margin-left: 0; }
+.top-sites-toggle { display: inline-flex; justify-self: start; align-items: center; gap: 4px; min-width: 0; max-width: calc(100% + 8px); min-height: 24px; margin-left: -8px; padding: 0 8px; border: 0; border-radius: 4px; background: transparent; color: inherit; white-space: nowrap; }
+.top-sites-toggle:hover { background: var(--bgColor-neutral-muted); color: var(--fgColor-default); }
 .top-sites-fewer { flex-shrink: 0; }
-.top-sites-fewer svg, .history-pagination-fewer svg { transform: rotate(180deg); }
+.top-sites-fewer svg { transform: rotate(180deg); }
 .top-sites-empty { padding: 8px 0; }
 .calendar-message { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
 .history-content { display: grid; grid-template-columns: minmax(0, 1fr); }
 .history-content > * { grid-area: 1 / 1; }
 .history-rows[inert] { opacity: .25; }
-.history-date-feedback { align-self: start; z-index: 1; padding: 16px; background: var(--bgColor-default); }
+/* keep long histories inside the panel and load further pages while scrolling */
+/* show nine and a half rows of 40px plus their 1px borders so the cut row hints at scrolling */
+.history-rows { max-height: calc(9.5 * 41px); overflow-y: auto; }
+.history-date-feedback { align-self: start; z-index: 1; padding: 8px 16px; background: var(--bgColor-default); }
+.history-date-feedback > p { margin: 0; }
 .backup-list { border: 1px solid var(--borderColor-default); border-radius: 6px; overflow: hidden; }
 .list-header { padding: 9.5px 16px; background: var(--bgColor-muted); display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .history-panel + .history-panel { margin-top: 24px; }
@@ -173,20 +176,27 @@ p { margin-top: 6px; }
 .history-sort-button, .tab-chart-period { display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-height: 24px; padding: 3px 6px; border: 0; border-radius: 4px; background: transparent; color: var(--fgColor-muted); font-size: 12px; }
 .history-sort-button:hover, .tab-chart-period:hover { background: var(--bgColor-neutral-muted); color: var(--fgColor-default); }
 .history-sort-button[aria-pressed="true"], .tab-chart-period[aria-pressed="true"] { color: var(--fgColor-default); font-weight: 600; }
-.backup-row { position: relative; border-top: 1px solid var(--borderColor-muted); }
-.backup-actions { position: absolute; right: 16px; top: 17px; display: flex; gap: 4px; }
-.backup-summary { display: grid; grid-template-columns: 16px max-content minmax(0, 1fr) minmax(0, 1.25fr); align-items: center; gap: 12px; padding: 10px 124px 10px 16px; cursor: pointer; list-style: none; min-height: 62px; }
+/* overlay the actions on the row so they can stay visible with the pinned summary */
+.backup-row { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); border-top: 1px solid var(--borderColor-muted); }
+.backup-row > details, .backup-row > .backup-actions { grid-area: 1 / 1; }
+.backup-actions { position: sticky; top: 6px; z-index: 3; align-self: start; justify-self: end; display: flex; gap: 4px; margin: 6px 16px 0 0; }
+/* pin an opened session's summary to the top of the list while its tabs scroll */
+.backup-row > details[open] > .backup-summary { position: sticky; top: 0; z-index: 2; background: var(--bgColor-default); border-bottom: 1px solid var(--borderColor-muted); }
+/* one line per backup with the name, counts and changes side by side */
+.backup-summary { display: grid; grid-template-columns: 16px max-content minmax(0, 3fr) minmax(0, 1fr); align-items: center; gap: 12px; padding: 4px 124px 4px 16px; cursor: pointer; list-style: none; min-height: 40px; }
 .backup-summary::-webkit-details-marker, .calendar-heading::-webkit-details-marker { display: none; }
 .backup-summary:hover { background: var(--bgColor-muted); }
 .backup-summary > svg, .calendar-heading > svg { color: var(--fgColor-muted); transform: rotate(-90deg); }
 details[open] > .backup-summary > svg, details[open] > .calendar-heading > svg { transform: rotate(0); }
-.backup-label { display: flex; flex-direction: column; flex: 1; min-width: 0; gap: 2px; }
+.backup-label { display: flex; flex-wrap: wrap; align-items: center; flex: 1; min-width: 0; gap: 2px 16px; }
+/* start counts and change bars at the same position in every row */
+.backup-label > .backup-name { flex: 0 0 45%; }
 .backup-name { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; min-width: 0; }
 .backup-title { min-width: 0; overflow-wrap: anywhere; }
 .session-rename, .session-keep, .panel-help-button { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--fgColor-muted); }
 .session-rename > svg, .session-keep > svg { width: 14px; height: 14px; }
 .session-rename:hover:not(:disabled), .session-keep:hover:not(:disabled), .panel-help-button:hover { color: var(--fgColor-default); background: var(--bgColor-neutral-muted); }
-.backup-number { min-width: 48px; max-width: 100px; padding: 6px 8px; border: 1px solid var(--borderColor-default); border-radius: 6px; background: var(--bgColor-muted); color: var(--fgColor-muted); text-align: center; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.backup-number { min-width: 48px; max-width: 100px; padding: 2px 8px; border: 1px solid var(--borderColor-default); border-radius: 6px; background: var(--bgColor-muted); color: var(--fgColor-muted); text-align: center; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .backup-date { min-width: 0; justify-self: end; font-size: inherit; font-weight: 600; text-align: right; overflow-wrap: anywhere; }
 .backup-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-left: 4px; }
 .tag-chip { padding: 0 10px; border: 0; border-radius: 2em; background: var(--bgColor-accent-muted, #388bfd1a); color: var(--fgColor-accent, #58a6ff); font-size: 12px; font-weight: 500; line-height: 22px; }
@@ -416,9 +426,12 @@ details[open] > .backup-summary > svg, details[open] > .calendar-heading > svg {
   .status-summary > p { grid-column: 1; text-align: left; }
   .status-summary > svg { grid-column: 2; grid-row: 1 / 3; }
   .backup-summary { grid-template-columns: 16px minmax(0, 1fr); gap: 8px 12px; padding-right: 16px; }
-  .backup-actions { position: static; justify-content: flex-end; padding: 0 16px 10px; }
+  .backup-row { display: block; }
+  .backup-actions { position: static; justify-content: flex-end; margin: 0; padding: 0 16px 10px; }
   .backup-number { justify-self: start; }
   .backup-label, .backup-date { grid-column: 2; }
+  .backup-label { flex-direction: column; align-items: stretch; }
+  .backup-label > .backup-name { flex: none; }
   .backup-date { justify-self: start; text-align: left; }
   .snapshot-preview { padding-left: 16px; }
   .tab-row { flex-wrap: wrap; }

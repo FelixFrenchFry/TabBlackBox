@@ -26,7 +26,7 @@ import { favicon } from '../../src/ui/favicon';
 import { displayUrl, siteLabel } from '../../src/ui/site-label';
 import { markMatches, type SearchHighlight } from '../../src/ui/highlight';
 import { setTooltip } from '../../src/ui/tooltip';
-import { HISTORY_INITIAL_LIMIT, SESSION_NAME_LIMIT } from '../../src/protocol';
+import { SESSION_NAME_LIMIT } from '../../src/protocol';
 import { privacyLink } from '../../src/ui/privacy';
 
 const root = setup();
@@ -130,21 +130,15 @@ function historyPanel(collection: Collection)
   const dateFeedback = el('div', 'history-date-feedback');
   dateFeedback.hidden = true;
   dateFeedback.setAttribute('aria-live', 'polite');
-  const pagination = el('div', 'history-pagination');
-  pagination.hidden = true;
-  const more = button('Show more', icons.ChevronDown, 'history-pagination-button');
-  more.hidden = true;
-  const fewer = button('Show less', icons.ChevronDown, 'history-pagination-button history-pagination-fewer');
-  fewer.hidden = true;
-  pagination.append(more, fewer);
   list.append(header);
   if (collection === 'saved') list.append(toolbar);
   content.append(dateFeedback, rows);
-  list.append(content, pagination);
+  list.append(content);
   element.append(list);
   const items: Summary[] = [];
   const filter: { loadedRange: HistoryRange | null; loadedTabUrl: string | null; loadedSearch: SearchHighlight<SearchField> | null } = { loadedRange: null, loadedTabUrl: null, loadedSearch: null };
-  return { element, list, content, header, toolbar, sortButtons, updateSort, sort, loadedSort: sort, rememberSort: false, count, usage, dateFeedback, rows, pagination, more, fewer, collection, query: '', tag: null as string | null, items, ...filter, generation: 0, sessionRows: new Map<string, ReturnType<typeof row>>() };
+  // hasMore reports another stored page and pageable allows loading it for the displayed filters and order
+  return { element, list, content, header, toolbar, sortButtons, updateSort, sort, loadedSort: sort, rememberSort: false, count, usage, dateFeedback, rows, hasMore: false, pageable: false, collection, query: '', tag: null as string | null, items, ...filter, generation: 0, sessionRows: new Map<string, ReturnType<typeof row>>() };
 }
 
 const savedPanel = historyPanel('saved');
@@ -1124,23 +1118,16 @@ function renderHistory(panel: ReturnType<typeof historyPanel>): void
   }
 }
 
-function updateHistoryPagination(panel: ReturnType<typeof historyPanel>, hasMore: boolean): void
+function loadNearEnd(panel: ReturnType<typeof historyPanel>): void
 {
-  const { more, fewer, pagination, items } = panel;
-  const active = document.activeElement;
-  more.disabled = false;
-  fewer.disabled = false;
-  more.hidden = !hasMore;
-  fewer.hidden = items.length <= HISTORY_INITIAL_LIMIT;
-  pagination.hidden = more.hidden && fewer.hidden;
-  // keep keyboard focus on the remaining control when a page boundary hides one
-  if (active === more && more.hidden && !fewer.hidden) fewer.focus();
-  else if (active === fewer && fewer.hidden && !more.hidden) more.focus();
+  // load the next page when the visible list is scrolled near its end or does not fill its height yet
+  const { rows } = panel;
+  if (panel.hasMore && panel.pageable && rows.clientHeight > 0 && rows.scrollTop + rows.clientHeight >= rows.scrollHeight - 200) void loadHistory(panel, false).catch(showError);
 }
 
 async function loadHistory(panel: ReturnType<typeof historyPanel>, reset: boolean, preserveLoaded = false): Promise<void>
 {
-  const { items, more, sessionRows, sort, query, tag } = panel;
+  const { items, sessionRows, sort, query, tag } = panel;
   const range = historyRange;
   const tabUrl = historyTabUrl;
   const rangeChanged = range?.start !== panel.loadedRange?.start || range?.end !== panel.loadedRange?.end || tabUrl !== panel.loadedTabUrl;
@@ -1150,9 +1137,8 @@ async function loadHistory(panel: ReturnType<typeof historyPanel>, reset: boolea
   const externalSort = sortChanged && !rememberSort;
   const generation = reset ? ++panel.generation : panel.generation;
   const last = reset ? undefined : items.at(-1);
-  const focused = document.activeElement === more ? more : document.activeElement === panel.fewer ? panel.fewer : null;
-  more.disabled = true;
-  panel.fewer.disabled = true;
+  let loadedPage = false;
+  panel.pageable = false;
   // retain the list height while preventing interaction with a different day's rows
   panel.rows.inert = rangeChanged;
   panel.dateFeedback.hidden = !rangeChanged;
@@ -1168,9 +1154,18 @@ async function loadHistory(panel: ReturnType<typeof historyPanel>, reset: boolea
     if (panel === savedPanel) exportAll.disabled = data.count === 0;
     const loaded = [...data.items];
     let hasMore = data.more;
-    // retain loaded rows during renames and expanded sessions during new backups
+    // split the query into words like the stored session search
+    const nextSearch = { words: query.toLocaleLowerCase().split(/\s+/).filter(word => word.length > 0), fields };
+    const searchChanged = JSON.stringify(nextSearch) !== JSON.stringify(panel.loadedSearch);
+    // keep a row while it is expanded or scrolled into view in an unchanged search
+    const retained = (item: Summary): boolean => {
+      const saved = sessionRows.get(item.id);
+      if (!saved) return false;
+      return saved.details.open || (!searchChanged && saved.element.getBoundingClientRect().top < panel.rows.getBoundingClientRect().bottom);
+    };
+    // retain loaded rows during renames and expanded or visible sessions during new backups
     while (reset && !sortChanged && !rangeChanged && hasMore) {
-      const lastVisible = preserveLoaded ? items.at(-1) : items.findLast(item => sessionRows.get(item.id)?.details.open);
+      const lastVisible = preserveLoaded ? items.at(-1) : items.findLast(retained);
       const end = loaded.at(-1);
       if (!lastVisible || !end || compareHistory(end, lastVisible, sort) >= 0) break;
       const older = await request({ kind: 'history', before: { capturedAt: end.capturedAt, number: end.number, id: end.id }, collection: panel.collection, query, fields, ...(tag === null ? {} : { tag }), sort, ...dateFilter });
@@ -1183,12 +1178,14 @@ async function loadHistory(panel: ReturnType<typeof historyPanel>, reset: boolea
     else panel.items.push(...loaded);
     panel.loadedRange = range;
     panel.loadedTabUrl = tabUrl;
-    // split the query into words like the stored session search
-    panel.loadedSearch = { words: query.toLocaleLowerCase().split(/\s+/).filter(word => word.length > 0), fields };
+    panel.loadedSearch = nextSearch;
     panel.dateFeedback.hidden = true;
     renderHistory(panel);
+    // start a changed filter or order at the top while refreshes keep the scroll position
+    if (reset && (sortChanged || rangeChanged || searchChanged)) panel.rows.scrollTop = 0;
     updateDialogButtons();
-    updateHistoryPagination(panel, hasMore);
+    panel.hasMore = hasMore;
+    loadedPage = true;
     panel.loadedSort = sort;
     if (externalSort) panel.updateSort(sort);
     // remember successful user selections without republishing another page's choice
@@ -1222,13 +1219,9 @@ async function loadHistory(panel: ReturnType<typeof historyPanel>, reset: boolea
     }
   } finally {
     if (generation === panel.generation) {
-      more.disabled = panel.sort !== panel.loadedSort || panel.loadedRange?.start !== historyRange?.start || panel.loadedRange?.end !== historyRange?.end || panel.loadedTabUrl !== historyTabUrl;
-      panel.fewer.disabled = more.disabled;
-      // restore pagination focus after loading unless the user focused another control
-      if (focused && document.activeElement === document.body) {
-        const target = focused.hidden ? more.hidden ? panel.fewer : more : focused;
-        if (!target.hidden && !target.disabled) target.focus();
-      }
+      panel.pageable = panel.sort === panel.loadedSort && panel.loadedRange?.start === historyRange?.start && panel.loadedRange?.end === historyRange?.end && panel.loadedTabUrl === historyTabUrl;
+      // continue only after a successful page so failures wait for the next scroll
+      if (loadedPage) loadNearEnd(panel);
     }
   }
 }
@@ -1245,8 +1238,7 @@ function resetHistoryFilters(): void
   historyInvalidated = true;
   for (const panel of panels) {
     panel.generation++;
-    panel.more.disabled = true;
-    panel.fewer.disabled = true;
+    panel.pageable = false;
   }
 }
 
@@ -1341,16 +1333,7 @@ const refresh = createRefreshQueue(async kind =>
   }
 }, value => { backingUp = value; updateSave(); updateDialogButtons(); });
 for (const panel of panels) {
-  panel.more.addEventListener('click', () => { void loadHistory(panel, false).catch(showError); });
-  panel.fewer.addEventListener('click', () => {
-    if (panel.fewer.disabled) return;
-    // collapse the displayed rows back to the initial page and keep their loaded filters and order
-    panel.generation++;
-    panel.items = panel.items.slice(0, HISTORY_INITIAL_LIMIT);
-    renderHistory(panel);
-    updateDialogButtons();
-    updateHistoryPagination(panel, true);
-  });
+  panel.rows.addEventListener('scroll', () => loadNearEnd(panel), { passive: true });
   for (const { property, element } of panel.sortButtons) element.addEventListener('click', () => {
     const current = panel.rememberSort ? panel.sort : panel.loadedSort;
     const sort: HistorySort = property === 'date'

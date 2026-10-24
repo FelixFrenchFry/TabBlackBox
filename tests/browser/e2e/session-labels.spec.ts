@@ -44,17 +44,15 @@ test('session names persist and refresh across pages without losing loaded or ex
     database.close();
   });
   await page.reload();
-  await expect(page.locator('.backup-row')).toHaveCount(5);
-  for (let count = 10; count <= 60; count += 5) {
-    await page.getByRole('button', { name: 'Show more' }).click();
-    await expect(page.locator('.backup-row')).toHaveCount(count);
-  }
+  // the first page holds 50 rows and scrolling the list loads the rest
+  await expect(page.locator('.backup-row')).toHaveCount(50);
+  await page.locator('.automatic-backups .history-rows').evaluate(element => { element.scrollTo(0, element.scrollHeight); element.dispatchEvent(new Event('scroll')); });
+  await expect(page.locator('.backup-row')).toHaveCount(60);
   const other = await context.newPage();
   await other.goto(url);
-  for (let count = 10; count <= 60; count += 5) {
-    await other.getByRole('button', { name: 'Show more' }).click();
-    await expect(other.locator('.backup-row')).toHaveCount(count);
-  }
+  await expect(other.locator('.backup-row')).toHaveCount(50);
+  await other.locator('.automatic-backups .history-rows').evaluate(element => { element.scrollTo(0, element.scrollHeight); element.dispatchEvent(new Event('scroll')); });
+  await expect(other.locator('.backup-row')).toHaveCount(60);
   const row = page.locator('.backup-row').filter({ has: page.getByRole('button', { name: 'Rename session #1', exact: true }) });
   const otherRow = other.locator('.backup-row').filter({ has: other.getByRole('button', { name: 'Rename session #1', exact: true }) });
   const date = await row.locator('time').getAttribute('datetime');

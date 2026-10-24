@@ -129,10 +129,6 @@ test('backup calendar filters both lists, preserves sorting, and retries a faile
     expect(await savedPanel.evaluate(element => element.getBoundingClientRect().height)).toBe(savedHeight);
     await app.page.evaluate(() => document.dispatchEvent(new Event('release-date-history')));
     await expect(savedPanel.locator('.history-rows')).toHaveJSProperty('inert', false);
-    await expect(savedPanel.locator('.backup-title')).toHaveCount(5);
-    await savedPanel.getByRole('button', { name: 'Show more', exact: true }).click();
-    await expect(savedPanel.locator('.backup-title')).toHaveCount(10);
-    await savedPanel.getByRole('button', { name: 'Show more', exact: true }).click();
     await expect(savedPanel.locator('.backup-title')).toHaveCount(14);
     await expect(automaticPanel.locator('.backup-row').first()).toBeVisible();
     await savedPanel.getByRole('button', { name: /^Date,/ }).click();
@@ -163,7 +159,7 @@ test('backup calendar filters both lists, preserves sorting, and retries a faile
     await retry.click();
     await expect(savedPanel.locator('.history-rows')).toHaveJSProperty('inert', false);
     await expect(savedPanel.locator('.backup-title').first()).toHaveText('Calendar 01');
-    await expect(savedPanel.locator('.backup-title')).toHaveCount(5);
+    await expect(savedPanel.locator('.backup-title')).toHaveCount(14);
     await app.page.setViewportSize({ width: 380, height: 900 });
     await expect(calendar.locator('.calendar-month-group')).toHaveCount(1);
     await expect(legend).toBeVisible();

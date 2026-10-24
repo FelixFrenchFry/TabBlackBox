@@ -6,15 +6,15 @@ for (const local of [false, true]) {
   {
     const app = await launchAutomaticBackups();
     try {
-      await send(app.page, { kind: 'import', archive: { format: 'tabblackbox', version: 1, sessions: Array.from({ length: 35 }, (_, index) => ({
+      await send(app.page, { kind: 'import', archive: { format: 'tabblackbox', version: 1, sessions: Array.from({ length: 120 }, (_, index) => ({
         capturedAt: index + 1, name: String(index + 1), source: 'manual',
         windows: [{ groups: [], tabs: [{ url: 'https://example.test', title: 'Saved tab', pinned: false, group: null }] }],
       })) } });
       const other = await app.context.newPage();
       await other.goto(`chrome-extension://${app.extensionId}/backups.html`);
       await app.page.reload();
-      await expect(app.page.locator('.backup-title')).toHaveCount(5);
-      await expect(other.locator('.backup-title')).toHaveCount(5);
+      await expect(app.page.locator('.backup-title')).toHaveCount(50);
+      await expect(other.locator('.backup-title')).toHaveCount(50);
       await app.page.evaluate(() => {
         const original = chrome.runtime.sendMessage.bind(chrome.runtime);
         let fail = true;
@@ -33,15 +33,17 @@ for (const local of [false, true]) {
       const localDate = panel.getByRole('button', { name: /^Date,/ });
       const date = other.getByRole('region', { name: 'Manual backups', exact: true }).getByRole('button', { name: /^Date,/ });
       await date.click();
-      await expect(other.locator('.backup-title')).toHaveText(Array.from({ length: 5 }, (_, index) => String(index + 1)));
-      await expect(panel.getByRole('button', { name: 'Show more', exact: true })).toBeDisabled();
+      await expect(other.locator('.backup-title')).toHaveText(Array.from({ length: 50 }, (_, index) => String(index + 1)));
+      // scrolling loads no further page while the displayed order waits for another order
+      await panel.locator('.history-rows').evaluate(element => { element.scrollTo(0, element.scrollHeight); element.dispatchEvent(new Event('scroll')); });
+      await expect(panel.locator('.backup-row')).toHaveCount(50);
       expect(await panel.evaluate(element => element.getBoundingClientRect().height)).toBe(height);
       await expect(panel.locator('.backup-row').first()).toBeVisible();
       await expect(panel.locator('.backup-title')).toHaveText(originalNames);
       await expect(localDate).toHaveAttribute('aria-label', 'Date, newest first. Sort oldest first');
       if (local) {
         await localDate.click();
-        await expect(panel.locator('.backup-title')).toHaveText(Array.from({ length: 5 }, (_, index) => String(index + 1)));
+        await expect(panel.locator('.backup-title')).toHaveText(Array.from({ length: 50 }, (_, index) => String(index + 1)));
         await app.page.evaluate(() => document.dispatchEvent(new Event('release-cross-page-sort')));
         await expect(panel.getByRole('button', { name: 'Retry loading backups' })).toBeHidden();
         await expect(localDate).toHaveAttribute('aria-label', 'Date, oldest first. Sort newest first');
@@ -53,7 +55,7 @@ for (const local of [false, true]) {
       await expect(panel.locator('.backup-row').first()).toBeVisible();
       await expect(localDate).toHaveAttribute('aria-label', 'Date, newest first. Sort oldest first');
       await panel.getByRole('button', { name: 'Retry loading backups' }).click();
-      await expect(app.page.locator('.backup-title')).toHaveText(Array.from({ length: 5 }, (_, index) => String(index + 1)));
+      await expect(app.page.locator('.backup-title')).toHaveText(Array.from({ length: 50 }, (_, index) => String(index + 1)));
       await expect(localDate).toHaveAttribute('aria-label', 'Date, oldest first. Sort newest first');
       await expect(app.page.evaluate(() => localStorage.getItem('tabblackbox.history-sort.saved'))).resolves.toBe('date-asc');
     } finally { await app.context.close(); }

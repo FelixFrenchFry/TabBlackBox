@@ -41,18 +41,17 @@ for (const superseded of [false, true]) {
   {
     const app = await launchAutomaticBackups();
     try {
-      await send(app.page, { kind: 'import', archive: { format: 'tabblackbox', version: 1, sessions: Array.from({ length: 35 }, (_, index) => ({
+      await send(app.page, { kind: 'import', archive: { format: 'tabblackbox', version: 1, sessions: Array.from({ length: 120 }, (_, index) => ({
         capturedAt: index + 1, name: String(index + 1), source: 'manual',
         windows: [{ groups: [], tabs: [{ url: 'https://example.test', title: 'Saved tab', pinned: false, group: null }] }],
       })) } });
       await app.page.reload();
       const panel = app.page.getByRole('region', { name: 'Manual backups', exact: true });
       const names = panel.locator('.backup-title');
-      const more = panel.getByRole('button', { name: 'Show more', exact: true });
       const date = panel.getByRole('button', { name: /^Date,/ });
-      await expect(names).toHaveCount(5);
-      await more.click();
-      await expect(names).toHaveCount(10);
+      await expect(names).toHaveCount(50);
+      await panel.locator('.history-rows').evaluate(element => { element.scrollTo(0, element.scrollHeight); element.dispatchEvent(new Event('scroll')); });
+      await expect(names).toHaveCount(100);
       const previous = await names.allTextContents();
       const stored = await app.page.evaluate(() => localStorage.getItem('tabblackbox.history-sort.saved'));
       await app.page.evaluate(() => {
@@ -70,26 +69,21 @@ for (const superseded of [false, true]) {
       await date.click();
       if (superseded) await panel.getByRole('button', { name: /^Number,/ }).click();
       await expect(names).toHaveText(previous);
-      await expect(more).toBeDisabled();
-      await expect(panel.getByRole('button', { name: 'Show less', exact: true })).toBeDisabled();
+      // scrolling loads no further page while the new order is pending
+      await panel.locator('.history-rows').evaluate(element => { element.scrollTo(0, element.scrollHeight); element.dispatchEvent(new Event('scroll')); });
+      await expect(names).toHaveCount(100);
       await app.page.evaluate(() => document.dispatchEvent(new Event('release-sort')));
       await expect(app.page.locator('main:visible').getByText('Temporary sort failure')).toBeVisible();
       await expect(names).toHaveText(previous);
       await expect(date).toHaveAttribute('aria-label', 'Date, newest first. Sort oldest first');
-      await expect(more).toBeEnabled();
-      await expect(panel.getByRole('button', { name: 'Show less', exact: true })).toBeEnabled();
       expect(await app.page.evaluate(() => localStorage.getItem('tabblackbox.history-sort.saved'))).toBe(stored);
-      await more.click();
-      await expect(names).toHaveCount(15);
-      for (const count of [20, 25, 30, 35]) {
-        await more.click();
-        await expect(names).toHaveCount(count);
-      }
-      await expect(names).toHaveText(Array.from({ length: 35 }, (_, index) => String(35 - index)));
+      await panel.locator('.history-rows').evaluate(element => { element.scrollTo(0, element.scrollHeight); element.dispatchEvent(new Event('scroll')); });
+      await expect(names).toHaveCount(120);
+      await expect(names).toHaveText(Array.from({ length: 120 }, (_, index) => String(120 - index)));
       await date.click();
-      await expect(names).toHaveText(['1', '2', '3', '4', '5']);
+      await expect(names).toHaveText(Array.from({ length: 50 }, (_, index) => String(index + 1)));
       await app.page.reload();
-      await expect(names).toHaveText(['1', '2', '3', '4', '5']);
+      await expect(names).toHaveText(Array.from({ length: 50 }, (_, index) => String(index + 1)));
     } finally { await app.context.close(); }
   });
 }
