@@ -4,6 +4,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { Controller } from '../../src/controller';
 import { Repository } from '../../src/database';
 import type { AutomaticUpdate } from '../../src/model';
+import { BrowserChangedError } from '../../src/session';
 
 const session = (title: string) => ({ windows: [{ groups: [], tabs: [{ title, url: 'https://example.test', pinned: false, group: null }] }] });
 const port = createRestorePort();
@@ -37,6 +38,52 @@ it.each(policies)('retries a stale manual scan independently of $kind settings',
     expect(controller.status.kind).toBe('current');
     expect((await repository.metadata()).automatic).toEqual(automatic);
   } finally { controller.stopTimers(); await repository.close(); }
+});
+
+it.each([false, true])('retries a manual scan that saw the browser change, automatic backups %s', async automatic => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+  const repository = new Repository(crypto.randomUUID());
+  await repository.setAutomaticSettings({ kind: 'enabled', value: true }, Date.now());
+  const scan = vi.fn(async () => session('A'));
+  const controller = new Controller(repository, scan, port);
+  try {
+    await controller.start();
+    await controller.setAutomaticSettings({ kind: 'enabled', value: automatic });
+    scan.mockClear();
+    scan.mockRejectedValueOnce(new BrowserChangedError('Browser changed during capture. Retrying.'));
+    scan.mockImplementation(async () => session('B'));
+    const capture = controller.capture('manual');
+    await vi.advanceTimersByTimeAsync(250);
+    expect(await capture).toMatchObject({ kind: 'saved' });
+    expect(scan).toHaveBeenCalledTimes(2);
+    expect(controller.status.kind).toBe('current');
+    expect((await repository.history(null, 10, 'saved')).items).toHaveLength(1);
+    expect((await repository.history(null, 10, 'automatic')).items).toHaveLength(1);
+  } finally { vi.useRealTimers(); controller.stopTimers(); await repository.close(); }
+});
+
+it('reports a manual backup that keeps seeing the browser change after bounded retries', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+  const repository = new Repository(crypto.randomUUID());
+  const scan = vi.fn(async () => session('A'));
+  const controller = new Controller(repository, scan, port);
+  try {
+    await controller.start();
+    scan.mockClear();
+    scan.mockRejectedValue(new BrowserChangedError('Tab groups changed during capture. Retrying.'));
+    const capture = controller.capture('manual');
+    await vi.advanceTimersByTimeAsync(500);
+    expect(await capture).toBeUndefined();
+    expect(scan).toHaveBeenCalledTimes(3);
+    expect(controller.status).toEqual({ kind: 'error', message: 'Tabs kept changing during the backup. No backup was saved. Try Back up now again.' });
+    expect(await repository.list()).toHaveLength(0);
+    // other scan failures are reported at once without retries
+    scan.mockClear();
+    scan.mockRejectedValueOnce(new Error('Windows unavailable'));
+    await controller.capture('manual');
+    expect(scan).toHaveBeenCalledOnce();
+    expect(controller.status).toEqual({ kind: 'error', message: 'Windows unavailable' });
+  } finally { vi.useRealTimers(); controller.stopTimers(); await repository.close(); }
 });
 
 it('reports continuous changes after bounded manual retries and permits another attempt', async () => {

@@ -37,6 +37,22 @@ it('saves an unchanged current session and preserves it after reopening', async 
   } finally { await repository.close(); }
 });
 
+it('compares automatic captures with the newest automatic backup instead of a newer manual one', async () => {
+  const repository = new Repository(crypto.randomUUID());
+  try {
+    await repository.capture(session('before'), 'automatic', 1000);
+    await repository.capture(session('after'), 'manual', 2000);
+    const automatic = await repository.capture(session('after'), 'automatic', 3000);
+    expect(automatic.kind).toBe('saved');
+    expect((await repository.capture(session('after'), 'automatic', 4000)).kind).toBe('unchanged');
+    // keeping the newest automatic backup makes the previous automatic backup the comparison again
+    if (automatic.kind !== 'saved') throw new Error('Fixture missing');
+    await repository.keep(automatic.id, null, 5000);
+    expect((await repository.capture(session('after'), 'automatic', 6000)).kind).toBe('saved');
+    expect((await repository.history(null, 10, 'automatic')).items.map(item => item.capturedAt)).toEqual([6000, 1000]);
+  } finally { await repository.close(); }
+});
+
 it('excludes manual backups from the automatic space budget and preserves total accounting', async () => {
   const repository = new Repository(crypto.randomUUID(), 1200);
   try {

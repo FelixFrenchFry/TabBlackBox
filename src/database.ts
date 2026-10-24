@@ -381,8 +381,10 @@ export class Repository {
       let result: CaptureResult = { kind: 'empty' };
       let candidate: Snapshot | undefined;
       if (session.windows.length) {
-        // compare only the latest snapshot before loading the complete shared pool
-        const latest = source === 'automatic' && metadata.latestId ? await tx.objectStore('snapshots').get(metadata.latestId) : undefined;
+        // compare only the newest automatic snapshot before loading the complete shared pool
+        // a manual backup of the same tabs does not replace an automatic checkpoint
+        const newestAutomatic = source === 'automatic' ? newestAutomaticId(history, metadata.latestId) : null;
+        const latest = newestAutomatic ? await tx.objectStore('snapshots').get(newestAutomatic) : undefined;
         const latestTabs = latest ? await readTabs([latest], id => tx.objectStore('tabs').get(id)) : undefined;
         if (latest && latestTabs && canonicalSession(decodeSnapshot(latest, latestTabs)) === canonicalSession(session)) result = { kind: 'unchanged' };
         else {

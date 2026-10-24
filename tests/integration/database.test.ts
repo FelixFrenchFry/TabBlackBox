@@ -32,7 +32,7 @@ describe('transactional backups', () =>
   {
     const name = crypto.randomUUID();
     const first = new Repository(name);
-    const saved = await first.capture(session, 'manual', 1000);
+    const saved = await first.capture(session, 'automatic', 1000);
     expect(saved.kind).toBe('saved');
     await first.close();
     const reopened = new Repository(name);

@@ -6,12 +6,15 @@ export type CaptureTab = { index: number; url?: string; pendingUrl?: string; tit
 export type CaptureWindow = { id?: number; type?: string; incognito: boolean; tabs?: CaptureTab[] };
 export type CaptureGroup = { id: number; windowId: number; title?: string; color: GroupColor; collapsed: boolean };
 
+// a scan that saw windows or tab groups change midway and can be repeated
+export class BrowserChangedError extends Error {}
+
 export function normalizeSession(windows: CaptureWindow[], groups: CaptureGroup[], ownOrigin: string): Session
 {
   const saved: SavedWindow[] = [];
   for (const window of windows) {
     if (window.incognito || window.type !== 'normal') continue;
-    if (!window.tabs) throw new Error('Browser changed during capture. Retrying.');
+    if (!window.tabs) throw new BrowserChangedError('Browser changed during capture. Retrying.');
     const result: SavedWindow = { tabs: [], groups: [] };
     const groupIds = new Map<number, number>();
     for (const tab of [...window.tabs].sort((a, b) => a.index - b.index)) {
@@ -24,7 +27,7 @@ export function normalizeSession(windows: CaptureWindow[], groups: CaptureGroup[
       let group: number | null = null;
       if (tab.groupId !== -1) {
         const metadata = groups.find(item => item.id === tab.groupId && item.windowId === window.id);
-        if (!metadata) throw new Error('Tab groups changed during capture. Retrying.');
+        if (!metadata) throw new BrowserChangedError('Tab groups changed during capture. Retrying.');
         group = groupIds.get(tab.groupId) ?? result.groups.length;
         if (!groupIds.has(tab.groupId)) {
           groupIds.set(tab.groupId, group);

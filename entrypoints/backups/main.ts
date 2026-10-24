@@ -292,7 +292,8 @@ async function confirmRestore(load: () => Snapshot | Promise<Snapshot>, trigger:
     dialog.setAttribute('aria-labelledby', 'restore-title');
     const title = el('h2', '', windowIndex === undefined ? 'Restore this session?' : `Restore window ${windowIndex + 1}?`);
     title.id = 'restore-title';
-    dialog.append(title, sessionCard({ ...snapshot, windowCount: snapshot.windows.length, tabCount: snapshot.windows.reduce((total, window) => total + window.tabs.length, 0) }), el('p', '', `${plural(supported, 'tab')} will open in ${plural(windows, 'new window')}. Your current windows will stay open.`));
+    // count only the windows and tabs this dialog restores
+    dialog.append(title, sessionCard({ ...snapshot, windowCount: selected.length, tabCount: tabs.length }), el('p', '', `${plural(supported, 'tab')} will open in ${plural(windows, 'new window')}. Your current windows will stay open.`));
     if (blockedFiles) {
       dialog.append(el('p', 'muted', `${plural(blockedFiles, 'local file')} will be skipped until file access is enabled.`), fileAccessNotice());
       dialog.append(el('p', 'muted', 'After enabling access, close this dialog and choose Restore again.'));
@@ -697,7 +698,7 @@ function nameSession(item: Summary, trigger: HTMLButtonElement, action: 'rename'
         updateSummary(data.summary);
         saved = true;
         dialog.close();
-        if (action === 'keep') await searchHistory('').catch(showError);
+        // the history revision reloads both panels with their current search and filters
         await refresh('overview');
         if (action === 'rename') toast.show('Session renamed');
       } catch (error) { feedback.replaceChildren(notice(errorMessage(error))); }

@@ -3,11 +3,14 @@ import { StorageLimitExceededError } from './storage';
 import type { Repository } from './database';
 import { errorMessage, type AutomaticSettings, type AutomaticUpdate, type CaptureResult, type Overview, type Session, type Snapshot, type Source, type Status, type StorageSettings, type StorageSettingsResult } from './model';
 import { restoreSession, type RestorePort } from './restore';
-import { FILE_ACCESS_MESSAGE, fileUrl, restorableUrl, selectWindows } from './session';
+import { BrowserChangedError, FILE_ACCESS_MESSAGE, fileUrl, restorableUrl, selectWindows } from './session';
 
 export class BackupBusyError extends Error {
   constructor() { super('Restoration in progress. Try backing up again when it finishes.'); }
 }
+
+const MANUAL_ATTEMPTS = 3;
+const KEPT_CHANGING_MESSAGE = 'Tabs kept changing during the backup. No backup was saved. Try Back up now again.';
 
 type RestorationState =
   | { kind: 'idle' }
@@ -160,13 +163,20 @@ export class Controller {
       try {
         session = await this.scan();
       } catch (error) {
+        // repeat a manual scan that saw the browser change instead of leaving the backup to automatic retries
+        if (source === 'manual' && error instanceof BrowserChangedError) {
+          if (attempt === MANUAL_ATTEMPTS) { this.captureFailed(new Error(KEPT_CHANGING_MESSAGE), 'scan'); return; }
+          // give a moving tab or window a moment to settle before scanning again
+          await new Promise(resolve => setTimeout(resolve, 250));
+          continue;
+        }
         this.captureFailed(error, 'scan');
         return;
       }
       if (generation === this.generation) break;
       if (source === 'automatic') { this.changed(); return; }
-      if (attempt === 3) {
-        this.captureFailed(new Error('Tabs kept changing during the backup. No backup was saved. Try Back up now again.'), 'scan');
+      if (attempt === MANUAL_ATTEMPTS) {
+        this.captureFailed(new Error(KEPT_CHANGING_MESSAGE), 'scan');
         return;
       }
     }

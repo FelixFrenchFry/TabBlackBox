@@ -13,8 +13,11 @@ test('lists top websites of the latest backup and of all backups', async ({ exte
   // the second backup replaces the first page of the site with another one
   const tab = await context.newPage();
   for (const path of ['first', 'second']) {
-    await tab.goto(`http://127.0.0.1:9/${path}`).catch(() => undefined);
+    const url = `http://127.0.0.1:9/${path}`;
+    await tab.goto(url).catch(() => undefined);
     await page.bringToFront();
+    // wait until the tabs API reports the refused address so the backup captures it
+    await expect.poll(() => page.evaluate(async target => (await chrome.tabs.query({})).some(item => (item.pendingUrl || item.url) === target), url)).toBe(true);
     await page.evaluate(() => chrome.runtime.sendMessage({ kind: 'backup' }));
   }
   await page.reload();

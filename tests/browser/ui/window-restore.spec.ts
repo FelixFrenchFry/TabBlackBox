@@ -46,6 +46,8 @@ test('window buttons confirm only their own tabs and share the restore busy stat
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();
   await second.click();
   await expect(page.getByRole('dialog')).toContainText('2 tabs will open in 1 new window');
+  // the session card counts only the window being restored
+  await expect(page.getByRole('dialog').locator('.session-card')).toContainText('1 window · 2 tabs');
   await expect(page.getByRole('dialog')).not.toContainText('Allow access to file URLs');
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();
   expect(await page.evaluate(() => document.documentElement.dataset.restored)).toBeUndefined();

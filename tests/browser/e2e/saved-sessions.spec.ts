@@ -1,6 +1,7 @@
 import { test, expect } from '../fixtures/extension';
 import { enableAutomaticBackups } from '../fixtures/automatic';
 import { readFile } from 'node:fs/promises';
+import { importArchive } from '../fixtures/archive';
 
 test('keeps, saves, searches, exports and imports sessions in separate history panels', async ({ extensionContext }, testInfo) => {
   const context = await extensionContext();
@@ -75,4 +76,30 @@ test('keeps, saves, searches, exports and imports sessions in separate history p
   await page.screenshot({ path: testInfo.outputPath('saved-sessions.png'), fullPage: true });
   await page.setViewportSize({ width: 400, height: 900 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test('keeping an automatic backup leaves the manual backup search in place', async ({ extensionContext }) => {
+  const context = await extensionContext();
+  const worker = context.serviceWorkers()[0] ?? await context.waitForEvent('serviceworker');
+  const page = await context.newPage();
+  await page.goto(`chrome-extension://${new URL(worker.url()).host}/backups.html`);
+  await enableAutomaticBackups(page);
+  const tab = { url: 'https://example.test/', title: 'Example', pinned: false, group: null };
+  await importArchive(page, { format: 'tabblackbox', version: 1, sessions: ['Alpha', 'Beta'].map((name, index) => ({ capturedAt: index + 1, name, source: 'manual' as const, windows: [{ groups: [], tabs: [tab] }] })) });
+  const saved = page.getByRole('region', { name: 'Manual backups', exact: true });
+  const automatic = page.getByRole('region', { name: 'Automatic backups', exact: true });
+  const search = saved.getByRole('searchbox', { name: 'Search manual backups', exact: true });
+  await search.fill('alpha');
+  await expect(saved.locator('.backup-title')).toHaveText(['Alpha']);
+  await automatic.getByRole('button', { name: 'Keep session', exact: true }).first().click();
+  const dialog = page.getByRole('dialog', { name: 'Keep this session', exact: true });
+  await dialog.getByLabel('Name', { exact: true }).fill('Gamma');
+  await dialog.getByRole('button', { name: 'Keep', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  // the kept session joins the panel while the search still shows only its matches
+  await expect(saved.locator('.list-header .badge')).toHaveText('3');
+  await expect(search).toHaveValue('alpha');
+  await expect(saved.locator('.backup-title')).toHaveText(['Alpha']);
+  await search.fill('');
+  await expect(saved.locator('.backup-title')).toHaveText(['Gamma', 'Beta', 'Alpha']);
 });
