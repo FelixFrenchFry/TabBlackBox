@@ -24,10 +24,10 @@ test('refresh keeps an expanded older session and pagination remains ordered', a
       {
         const newest = document.documentElement.dataset.newHistory === 'true' ? 51 : 50;
         if (message.kind === 'history') {
-          if (message.collection === 'saved') return { ok: true, data: { kind: 'history', items: [], count: 0, bytes: 0 } };
+          if (message.collection === 'saved') return { ok: true, data: { kind: 'history', items: [], count: 0, bytes: 0, more: false } };
           const first = message.before ? message.before.capturedAt - 1 : newest;
           const items = Array.from({ length: Math.min(5, first) }, (_, index) => ({ id: `saved-${first - index}`, number: first - index, name: null, capturedAt: first - index, source: 'automatic' as const, windowCount: 1, tabCount: first - index, supportedCount: 1, bytes: 100 }));
-          return { ok: true, data: { kind: 'history', items, count: newest, bytes: newest * 100 } };
+          return { ok: true, data: { kind: 'history', items, count: newest, bytes: newest * 100, more: first > 5 } };
         }
         if (message.kind === 'snapshot') return { ok: true, data: { kind: 'snapshot', snapshot: { id: message.id, number: 1, name: null, capturedAt: 1, source: 'automatic', windows: [{ groups: [], tabs: [{ url: 'about:blank', title: 'Saved page', pinned: false, group: null }] }] } } };
         const reply: Reply = await original(message);
@@ -127,7 +127,7 @@ for (const failOldRequest of [false, true]) {
         Object.defineProperty(chrome.runtime, 'sendMessage', { value: async (message: Request): Promise<Reply> =>
         {
           if (message.kind === 'history') {
-            if (message.collection === 'saved') return { ok: true, data: { kind: 'history', items: [], count: 0, bytes: 0 } };
+            if (message.collection === 'saved') return { ok: true, data: { kind: 'history', items: [], count: 0, bytes: 0, more: false } };
             const newest = document.documentElement.dataset.newHistory === 'true' ? 101 : 100;
             const first = message.before ? message.before.capturedAt - 1 : newest;
             if (message.before && delayOlder) {
@@ -136,7 +136,7 @@ for (const failOldRequest of [false, true]) {
               await new Promise<void>(resolve => document.addEventListener('release-older', () => resolve(), { once: true }));
               if (fail) return { ok: false, error: 'Stale pagination failure' };
             }
-            return { ok: true, data: { kind: 'history', count: newest, bytes: newest * 100, items: Array.from({ length: 5 }, (_, index) => ({ id: `saved-${first - index}`, number: first - index, name: null, capturedAt: first - index, source: 'automatic', windowCount: 1, tabCount: first - index, supportedCount: 1, bytes: 100 })) } };
+            return { ok: true, data: { kind: 'history', count: newest, bytes: newest * 100, more: first > 5, items: Array.from({ length: 5 }, (_, index) => ({ id: `saved-${first - index}`, number: first - index, name: null, capturedAt: first - index, source: 'automatic', windowCount: 1, tabCount: first - index, supportedCount: 1, bytes: 100 })) } };
           }
           const reply: Reply = await original(message);
           if (reply.ok && reply.data.kind === 'overview') reply.data.overview.metadata.latestId = document.documentElement.dataset.newHistory === 'true' ? 'new' : 'old';

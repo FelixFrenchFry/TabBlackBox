@@ -32,6 +32,13 @@ export function formatDate(value: number, format: DateFormat, now = Date.now()):
   return new Intl.RelativeTimeFormat('en', { numeric: 'auto' }).format(Math.trunc(seconds), 'second');
 }
 
+// name files by the local calendar day as YYYY-MM-DD
+export function fileDate(value: number): string
+{
+  const date = new Date(value);
+  return [date.getFullYear(), date.getMonth() + 1, date.getDate()].map(part => String(part).padStart(2, '0')).join('-');
+}
+
 function updateTime(node: HTMLTimeElement): void
 {
   const value = Number(node.dataset.timestamp);

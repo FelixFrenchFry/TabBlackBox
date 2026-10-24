@@ -19,6 +19,12 @@ it('initializes the date clock and listeners only once', async () => {
   expect(windowEvents).toHaveBeenCalledTimes(windowCount);
   expect(documentEvents).toHaveBeenCalledTimes(documentCount);
 });
+it('names files by the local calendar day around midnight', async () => {
+  const { fileDate } = await import('../../src/ui/dates');
+  expect(fileDate(new Date(2026, 9, 24, 0, 30).getTime())).toBe('2026-10-24');
+  expect(fileDate(new Date(2026, 9, 23, 23, 59, 59).getTime())).toBe('2026-10-23');
+  expect(fileDate(new Date(2027, 0, 1, 0, 0).getTime())).toBe('2027-01-01');
+});
 it('formats relative durations using only the largest nonzero unit', async () => {
   const { formatDate } = await import('../../src/ui/dates');
   const now = Date.UTC(2026, 8, 12, 12);

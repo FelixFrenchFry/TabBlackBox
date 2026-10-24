@@ -62,7 +62,7 @@ export function createStatisticsView(...panels: HTMLElement[])
   // show the oldest capture as a fixed date beside the relative span
   const historyDate = el('time');
   const dateLabel = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-  summary.append(automatic.element, manual.element, storage.element, latest.element, history.element);
+  summary.append(manual.element, automatic.element, storage.element, latest.element, history.element);
   element.append(heading, summary, ...panels);
 
   let loadedKey = '';

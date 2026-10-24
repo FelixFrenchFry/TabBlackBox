@@ -3,7 +3,7 @@ import { expect, it, vi } from 'vitest';
 import { Repository } from '../../src/database';
 import { compareHistory } from '../../src/history';
 import * as history from '../../src/history';
-import type { HistorySort } from '../../src/model';
+import type { HistoryCursor, HistoryRange, HistorySort } from '../../src/model';
 import { parseRequest } from '../../src/protocol';
 
 const session = (title: string) => ({ windows: [{ groups: [], tabs: [{ url: 'https://example.test', title, pinned: false, group: null }] }] });
@@ -25,7 +25,7 @@ it('returns collection totals without comparing sort keys for count-only request
     try {
       for (const { sort } of orders) {
         const result = await repository.history(null, 0, 'automatic', '', sort);
-        expect(result).toEqual({ items: [], count: 2, bytes: expected.bytes });
+        expect(result).toEqual({ items: [], count: 2, bytes: expected.bytes, more: true });
       }
       expect(compare).not.toHaveBeenCalled();
     } finally { compare.mockRestore(); }
@@ -76,6 +76,34 @@ it.each(['date-desc', 'date-asc'] as const)('pages tied capture dates consistent
     if (!anchor) throw new Error('Fixture missing');
     await repository.deleteSession(anchor.id);
     expect((await repository.history(anchor, 2, 'saved', '', sort)).items.map(item => item.id)).toEqual(ids.slice(2));
+  } finally { await repository.close(); }
+});
+
+it.each([4, 5, 6, 10])('reports another page only when it holds matches with %i backups', async total => {
+  const repository = new Repository(crypto.randomUUID());
+  try {
+    for (let index = 0; index < total; index++) {
+      const result = await repository.capture(session(String(index)), 'manual', 100 + index);
+      if (result.kind !== 'saved') throw new Error('Fixture missing');
+      if (index % 2 === 0) await repository.rename(result.id, 'Research', { tags: [] });
+    }
+    // follow pages of five until the history reports no further page
+    const pages = async (query = '', range?: HistoryRange) => {
+      const result: { size: number; more: boolean }[] = [];
+      let before: HistoryCursor | null = null;
+      for (;;) {
+        const page = await repository.history(before, 5, 'saved', query, 'date-desc', range);
+        result.push({ size: page.items.length, more: page.more });
+        const last = page.items.at(-1);
+        if (!page.more || !last) return result;
+        before = { capturedAt: last.capturedAt, number: last.number, id: last.id };
+      }
+    };
+    const expected = (matches: number) => matches > 5 ? [{ size: 5, more: true }, { size: matches - 5, more: false }] : [{ size: matches, more: false }];
+    expect(await pages()).toEqual(expected(total));
+    // filters decide on matching rows instead of the whole collection
+    expect(await pages('research')).toEqual(expected(Math.ceil(total / 2)));
+    expect(await pages('', { start: 100, end: 105 })).toEqual(expected(Math.min(total, 5)));
   } finally { await repository.close(); }
 });
 

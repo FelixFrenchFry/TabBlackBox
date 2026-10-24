@@ -27,6 +27,8 @@ test('popup confirms saving in a disabled button without reserved feedback space
   await enableAutomaticBackups(page);
   await page.evaluate(() => document.dispatchEvent(new Event('test-poll')));
   await expect(page.getByText('Current tabs backed up automatically')).toBeVisible();
+  // the blank start page is the only backed up tab
+  await expect(page.locator('.status-card')).toContainText('1 window · 1 tab in the latest backup');
   const save = page.locator('.backup-button');
   const before = await save.boundingBox();
   const footerBefore = await page.locator('.popup-footer').boundingBox();

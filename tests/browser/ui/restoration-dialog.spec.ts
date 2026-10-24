@@ -25,7 +25,7 @@ async function launch(extensionContext: ExtensionContext)
       return interval(callback, delay);
     } });
     Object.defineProperty(chrome.runtime, 'sendMessage', { value: async (message: Request): Promise<Reply> => {
-      if (message.kind === 'history') return { ok: true, data: { kind: 'history', count: message.collection === 'saved' ? 1 : 0, bytes: 100, items: message.collection === 'saved' ? [{ ...snapshot, windowCount: 3, tabCount: 9, supportedCount: 9, bytes: 100 }] : [] } };
+      if (message.kind === 'history') return { ok: true, data: { kind: 'history', more: false, count: message.collection === 'saved' ? 1 : 0, bytes: 100, items: message.collection === 'saved' ? [{ ...snapshot, windowCount: 3, tabCount: 9, supportedCount: 9, bytes: 100 }] : [] } };
       if (message.kind === 'snapshot') return { ok: true, data: { kind: 'snapshot', snapshot } };
       if (message.kind === 'restore-window' || message.kind === 'restore') {
         if (sessionStorage.getItem('test-delay')) await new Promise<void>(resolve => document.addEventListener('test-admit', () => resolve(), { once: true }));

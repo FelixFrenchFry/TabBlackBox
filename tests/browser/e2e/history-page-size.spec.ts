@@ -24,7 +24,7 @@ test('history expands in pages and collapses without changing its filters or sor
     await more.click();
     await expect(panel.locator('.backup-row')).toHaveCount(count);
   }
-  await more.click();
+  // the last full page already ends the history without an empty extra page
   await expect(more).toBeHidden();
   await expect(fewer).toBeFocused();
   expect(await panel.locator('.backup-counts > .muted').allTextContents()).toEqual([...Array.from({ length: 79 }, (_, index) => `1 window · ${80 - index} tabs`), '1 window · 1 tab']);

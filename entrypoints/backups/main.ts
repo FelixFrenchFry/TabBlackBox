@@ -1,4 +1,4 @@
-import { timestamp } from '../../src/ui/dates';
+import { fileDate, timestamp } from '../../src/ui/dates';
 import { errorMessage, type ChangeCounts, type ClosedTabChange, type Collection, type HistoryRange, type HistorySort, type Operation, type Overview, type SearchField, type Snapshot, type Summary, type TabMatch, type TabSearchField } from '../../src/model';
 import { changeCounts } from '../../src/changes';
 import { compareHistory, parseHistorySort, parseSearchFields, SEARCH_FIELDS } from '../../src/history';
@@ -26,7 +26,7 @@ import { favicon } from '../../src/ui/favicon';
 import { displayUrl, siteLabel } from '../../src/ui/site-label';
 import { markMatches, type SearchHighlight } from '../../src/ui/highlight';
 import { setTooltip } from '../../src/ui/tooltip';
-import { HISTORY_INITIAL_LIMIT, HISTORY_PAGE_LIMIT, SESSION_NAME_LIMIT } from '../../src/protocol';
+import { HISTORY_INITIAL_LIMIT, SESSION_NAME_LIMIT } from '../../src/protocol';
 import { privacyLink } from '../../src/ui/privacy';
 
 const root = setup();
@@ -740,7 +740,7 @@ async function downloadArchive(format: ExportFormat, id: string | undefined, sig
   const url = URL.createObjectURL(file);
   const link = el('a');
   link.href = url;
-  link.download = `tabblackbox-${id === undefined ? 'sessions' : 'session'}-${new Date().toISOString().slice(0, 10)}.${details.extension}`;
+  link.download = `tabblackbox-${id === undefined ? 'sessions' : 'session'}-${fileDate(Date.now())}.${details.extension}`;
   root.append(link);
   link.click();
   link.remove();
@@ -1165,20 +1165,18 @@ async function loadHistory(panel: ReturnType<typeof historyPanel>, reset: boolea
     const mb = data.bytes / MB;
     panel.usage.textContent = `${mb > 0 && mb < 0.01 ? '<0.01' : formatNumber(mb, 2)} MB`;
     if (panel === savedPanel) exportAll.disabled = data.count === 0;
-    let page = data.items;
-    let pageLimit = last ? HISTORY_PAGE_LIMIT : HISTORY_INITIAL_LIMIT;
-    const loaded = [...page];
+    const loaded = [...data.items];
+    let hasMore = data.more;
     // retain loaded rows during renames and expanded sessions during new backups
-    while (reset && !sortChanged && !rangeChanged && page.length === pageLimit) {
+    while (reset && !sortChanged && !rangeChanged && hasMore) {
       const lastVisible = preserveLoaded ? items.at(-1) : items.findLast(item => sessionRows.get(item.id)?.details.open);
       const end = loaded.at(-1);
       if (!lastVisible || !end || compareHistory(end, lastVisible, sort) >= 0) break;
       const older = await request({ kind: 'history', before: { capturedAt: end.capturedAt, number: end.number, id: end.id }, collection: panel.collection, query, fields, ...(tag === null ? {} : { tag }), sort, ...dateFilter });
       if (generation !== panel.generation) return;
       if (older.kind !== 'history') throw new Error('Unexpected history response.');
-      page = older.items;
-      pageLimit = HISTORY_PAGE_LIMIT;
-      loaded.push(...page);
+      loaded.push(...older.items);
+      hasMore = older.more;
     }
     if (reset) panel.items = loaded;
     else panel.items.push(...loaded);
@@ -1189,7 +1187,7 @@ async function loadHistory(panel: ReturnType<typeof historyPanel>, reset: boolea
     panel.dateFeedback.hidden = true;
     renderHistory(panel);
     updateDialogButtons();
-    updateHistoryPagination(panel, page.length === pageLimit);
+    updateHistoryPagination(panel, hasMore);
     panel.loadedSort = sort;
     if (externalSort) panel.updateSort(sort);
     // remember successful user selections without republishing another page's choice

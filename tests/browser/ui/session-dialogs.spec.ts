@@ -11,8 +11,8 @@ for (const failure of [false, true]) test(`session dialogs share pending lookup 
     const original = chrome.runtime.sendMessage.bind(chrome.runtime);
     Object.defineProperty(chrome.extension, 'isAllowedFileSchemeAccess', { value: async () => false });
     Object.defineProperty(chrome.runtime, 'sendMessage', { value: async (message: Request): Promise<Reply> => {
-      if (message.kind === 'history' && message.collection === 'saved') return { ok: true, data: { kind: 'history', items: [], count: 0, bytes: 0 } };
-      if (message.kind === 'history') return { ok: true, data: { kind: 'history', count: 1, bytes: 100, items: [{ id: 'saved', number: 1, name: null, capturedAt: 1, source: 'manual', windowCount: 1, tabCount: 1, supportedCount: 1, bytes: 100 }] } };
+      if (message.kind === 'history' && message.collection === 'saved') return { ok: true, data: { kind: 'history', more: false, items: [], count: 0, bytes: 0 } };
+      if (message.kind === 'history') return { ok: true, data: { kind: 'history', more: false, count: 1, bytes: 100, items: [{ id: 'saved', number: 1, name: null, capturedAt: 1, source: 'manual', windowCount: 1, tabCount: 1, supportedCount: 1, bytes: 100 }] } };
       if (message.kind === 'snapshot') return new Promise(resolve => {
         document.documentElement.dataset.snapshotPending = 'true';
         window.addEventListener('finish-snapshot', event => {

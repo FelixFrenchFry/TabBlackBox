@@ -191,7 +191,7 @@ export class Repository {
     return (await this.history(before, limit)).items;
   }
 
-  async history(before: HistoryCursor | null = null, limit = 50, collection?: Collection, query = '', sort: HistorySort = 'date-desc', range?: HistoryRange, tabUrl?: string, fields: readonly SearchField[] = SEARCH_FIELDS, tag?: string): Promise<{ items: Summary[]; count: number; bytes: number }>
+  async history(before: HistoryCursor | null = null, limit = 50, collection?: Collection, query = '', sort: HistorySort = 'date-desc', range?: HistoryRange, tabUrl?: string, fields: readonly SearchField[] = SEARCH_FIELDS, tag?: string): Promise<{ items: Summary[]; count: number; bytes: number; more: boolean }>
   {
     const db = await this.db();
     const transaction = db.transaction(['summaries', 'metadata', 'snapshots', 'tabs']);
@@ -206,6 +206,7 @@ export class Repository {
     }
     const result: Summary[] = [];
     let count = 0;
+    let more = false;
     const bytes = collection === 'automatic' ? metadata.automaticBytes : collection === 'saved' ? metadata.savedBytes : metadata.bytes;
     const words = query.toLocaleLowerCase().split(/\s+/).filter(word => word.length > 0);
     if (limit > 0) summaries.sort((a, b) => compareHistory(a, b, sort));
@@ -213,11 +214,15 @@ export class Repository {
       const matches = collection === undefined || (item.savedAt !== undefined) === (collection === 'saved');
       if (matches) count++;
       // filter the full collection before paging in the selected order
-      if (matches && result.length < limit && (!range || (item.capturedAt >= range.start && item.capturedAt < range.end)) && matchesSearch(item, words, fields) && (!tag || item.tags?.includes(tag)) &&
-          (!containing || containing.has(item.id)) && (!before || compareHistory(item, before, sort) > 0)) result.push(item);
+      if (matches && !more && (!range || (item.capturedAt >= range.start && item.capturedAt < range.end)) && matchesSearch(item, words, fields) && (!tag || item.tags?.includes(tag)) &&
+          (!containing || containing.has(item.id)) && (!before || compareHistory(item, before, sort) > 0)) {
+        // one further match after a full page shows that another page exists
+        if (result.length < limit) result.push(item);
+        else more = true;
+      }
     }
     await transaction.done;
-    return { items: result, count, bytes };
+    return { items: result, count, bytes, more };
   }
 
   async oldestCapturedAt(): Promise<number | null>

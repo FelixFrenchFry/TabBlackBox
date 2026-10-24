@@ -16,8 +16,8 @@ test('file-only history offers permission instructions and opens files through t
       return { id: 123 };
     } });
     Object.defineProperty(chrome.runtime, 'sendMessage', { value: async (message: Request): Promise<Reply> => {
-      if (message.kind === 'history' && message.collection === 'saved') return { ok: true, data: { kind: 'history', items: [], count: 0, bytes: 0 } };
-      if (message.kind === 'history') return { ok: true, data: { kind: 'history', count: 1, bytes: 100, items: [{ id: 'local', number: 1, name: null, capturedAt: 1, source: 'manual', windowCount: 1, tabCount: 1, supportedCount: 0, bytes: 100 }] } };
+      if (message.kind === 'history' && message.collection === 'saved') return { ok: true, data: { kind: 'history', items: [], count: 0, bytes: 0, more: false } };
+      if (message.kind === 'history') return { ok: true, data: { kind: 'history', more: false, count: 1, bytes: 100, items: [{ id: 'local', number: 1, name: null, capturedAt: 1, source: 'manual', windowCount: 1, tabCount: 1, supportedCount: 0, bytes: 100 }] } };
       if (message.kind === 'snapshot') return { ok: true, data: { kind: 'snapshot', snapshot: { id: 'local', number: 1, name: null, capturedAt: 1, source: 'manual', windows: [{ groups: [], tabs: [{ url, title: 'Local paper', pinned: false, group: null }] }] } } };
       return original(message);
     } });

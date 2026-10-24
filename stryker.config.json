@@ -17,8 +17,6 @@
     "coverage",
     "reports",
     "tests/browser",
-    "benchmarks",
-    "docs",
     "assets",
     "scripts",
     "tmp",
