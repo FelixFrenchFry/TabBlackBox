@@ -172,8 +172,8 @@ const exportAll = button('Export all', icons.Download);
 const importSessions = button('Import', icons.Upload);
 const search = el('input', 'session-name-input archive-search');
 search.type = 'search';
-search.placeholder = 'Search session names';
-search.setAttribute('aria-label', 'Search session names');
+search.placeholder = 'Search manual backups';
+search.setAttribute('aria-label', 'Search manual backups');
 search.maxLength = SESSION_NAME_LIMIT;
 const searchFields = createSearchFields({ id: 'search-fields-menu', storageKey: 'tabblackbox.search-fields', fields: SEARCH_FIELDS, labels: { name: 'Names', tags: 'Tags' }, parse: parseSearchFields }, () => {
   void searchHistory(search.value).catch(showError);
@@ -229,6 +229,7 @@ let historyRevision: number | null = null;
 let historyInvalidated = false;
 let restoring = false;
 let backingUp = false;
+let automaticState: 'off' | 'on' | 'paused' = 'off';
 let lastOperation: Operation | null | undefined;
 let fileAccess = false;
 const restoreButtons = new Map<HTMLButtonElement, number>();
@@ -424,7 +425,7 @@ function tabLabel(text: string, url: string | null, search?: SearchHighlight<Tab
     title = el('span', 'tab-title', name);
     open = button('', icons.ArrowUpRight, 'tab-open');
     open.disabled = true;
-    openLabel = url ? 'This URL cannot be opened from a saved session' : 'No saved URL is available';
+    openLabel = url ? 'This URL cannot be opened from a backup' : 'No saved URL is available';
   }
   open.setAttribute('aria-label', openLabel);
   // open row tooltips above so moving down the list keeps the next tab visible
@@ -757,12 +758,12 @@ async function savedRange(): Promise<{ count: number; oldest: number; newest: nu
   return oldest && newest ? { count: first.count, oldest: oldest.capturedAt, newest: newest.capturedAt } : null;
 }
 
-// identify a session inside a dialog
-function sessionCard(item: Pick<Summary, 'name' | 'number' | 'capturedAt' | 'windowCount' | 'tabCount'>): HTMLElement
+// identify a session inside a dialog and name its panel because each panel numbers its own backups
+function sessionCard(item: Pick<Summary, 'name' | 'number' | 'capturedAt' | 'windowCount' | 'tabCount' | 'savedAt'>): HTMLElement
 {
   const card = el('div', 'session-card');
   const name = el('div', 'session-card-name');
-  name.append(el('strong', 'session-card-title', item.name ?? 'Unnamed session'), el('span', 'muted', `#${item.number}`));
+  name.append(el('strong', 'session-card-title', item.name ?? 'Unnamed session'), el('span', 'muted', `${item.savedAt === undefined ? 'Automatic' : 'Manual'} backup #${item.number}`));
   const details = el('div', 'muted');
   details.append(timestamp(item.capturedAt), document.createTextNode(` · ${plural(item.windowCount, 'window')} · ${plural(item.tabCount, 'tab')}`));
   card.append(name, details);
@@ -774,7 +775,7 @@ function savedSessionsCard(): HTMLElement
   const card = el('div', 'session-card');
   const name = el('div', 'session-card-name');
   const count = el('span', 'muted');
-  name.append(el('strong', 'session-card-title', 'All saved sessions'), count);
+  name.append(el('strong', 'session-card-title', 'All manual backups'), count);
   const details = el('div', 'muted');
   card.append(name, details);
   // fill in the count and capture range once loaded
@@ -878,7 +879,7 @@ function deleteSession(item: Summary, trigger: HTMLButtonElement): void
   if (restoring || backingUp || !sessionDialogLock.acquire()) return;
   const dialog = el('dialog', 'restore-dialog');
   const saved = item.savedAt !== undefined;
-  const title = el('h2', '', saved ? 'Delete saved session?' : 'Delete automatic backup?');
+  const title = el('h2', '', saved ? 'Delete manual backup?' : 'Delete automatic backup?');
   title.id = 'delete-session-title';
   dialog.setAttribute('aria-labelledby', title.id);
   dialog.append(title, sessionCard(item), el('p', '', `“${item.name ?? 'Unnamed session'}” will be permanently deleted. Export a copy first if you want to keep it.`));
@@ -908,7 +909,7 @@ function deleteSession(item: Summary, trigger: HTMLButtonElement): void
         await request({ kind: 'delete-session', id: item.id });
         await refresh('overview');
         dialog.close();
-        toast.show(saved ? 'Saved session deleted' : 'Automatic backup deleted');
+        toast.show(saved ? 'Manual backup deleted' : 'Automatic backup deleted');
       } catch (error) { feedback.replaceChildren(notice(errorMessage(error))); }
       finally { deleting = false; remove.disabled = cancel.disabled = false; }
     })();
@@ -931,7 +932,7 @@ function tagChip(tag: string, words: readonly string[]): HTMLButtonElement
   const chip = el('button', 'tag-chip');
   chip.type = 'button';
   markMatches(chip, tag, words);
-  setTooltip(chip, 'Search saved sessions for this tag');
+  setTooltip(chip, 'Search manual backups for this tag');
   // filter by this exact tag without toggling the session row even when tags were excluded from the search
   chip.addEventListener('click', event => {
     event.preventDefault();
@@ -1037,7 +1038,7 @@ function row(item: Summary, highlight: () => SearchHighlight<SearchField> | null
   exportSession.addEventListener('click', () => exportSessions(exportSession, item));
   const remove = button('', icons.Trash2, 'button small icon-button invisible danger');
   remove.setAttribute('aria-label', 'Delete session');
-  setTooltip(remove, item.savedAt === undefined ? 'Delete this automatic backup' : 'Delete this saved session');
+  setTooltip(remove, item.savedAt === undefined ? 'Delete this automatic backup' : 'Delete this manual backup');
   remove.addEventListener('click', () => deleteSession(item, remove));
   actions.append(exportSession, remove, restore);
   wrapper.append(details, actions);
@@ -1116,8 +1117,8 @@ function renderHistory(panel: ReturnType<typeof historyPanel>): void
   }
   if (!items.length) {
     const empty = el('div', 'empty-state');
-    const title = panel.loadedTabUrl ? 'No backups contain this tab' : panel.loadedRange ? 'No matching backups on this date' : panel.query ? 'No matching saved sessions' : panel.collection === 'saved' ? 'Keep sessions for later' : 'Your backup history starts here';
-    const description = panel.loadedTabUrl ? 'Clear the tab filter to see all backups.' : panel.loadedRange ? 'Choose another day or clear the date filter.' : panel.query ? 'Try another session name.' : panel.collection === 'saved' ? 'Choose Back up now or select the bookmark icon on an automatic backup below.' : 'Open some tabs and enable automatic backups in Settings. Changes will be saved according to your automatic backup settings.';
+    const title = panel.loadedTabUrl ? 'No backups contain this tab' : panel.loadedRange ? 'No matching backups on this date' : panel.query ? 'No matching manual backups' : panel.collection === 'saved' ? 'Keep sessions for later' : 'Your backup history starts here';
+    const description = panel.loadedTabUrl ? 'Clear the tab filter to see all backups.' : panel.loadedRange ? 'Choose another day or clear the date filter.' : panel.query ? 'Try other words or change Search in.' : panel.collection === 'saved' ? 'Choose Back up now or select the bookmark icon on an automatic backup below.' : automaticState === 'paused' ? 'Automatic backups are paused. They resume when the pause timer ends.' : automaticState === 'on' ? 'Automatic backups are on. The first one is saved after your tabs change.' :'Open some tabs and enable automatic backups in Settings. Changes will be saved according to your automatic backup settings.';
     empty.append(icon(icons.Archive, 32), el('h2', '', title), el('p', 'muted', description));
     rows.append(empty);
   }
@@ -1297,6 +1298,13 @@ function applyOverview(overview: Overview, pendingRequest: object | null): void
   restoring = restoreResult.starting || overview.status.kind === 'restoring';
   updateSave();
   updateDialogButtons();
+  // describe an empty automatic history by the current setting once the history has loaded
+  const { enabled, pausedUntil } = overview.metadata.automatic;
+  const state = !enabled ? 'off' : pausedUntil !== null && pausedUntil > Date.now() ? 'paused' : 'on';
+  if (automaticState !== state) {
+    automaticState = state;
+    if (!automaticPanel.items.length && automaticPanel.rows.childElementCount) renderHistory(automaticPanel);
+  }
 }
 
 const refresh = createRefreshQueue(async kind =>

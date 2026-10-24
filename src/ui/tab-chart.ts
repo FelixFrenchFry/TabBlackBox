@@ -1,5 +1,6 @@
 import { chartMaximum, parseTabChartPeriod, TAB_CHART_PERIODS, tabChartRange, type TabChartPeriod } from '../chart';
 import { errorMessage, type HistoryRange, type Metadata, type TabCountPoint } from '../model';
+import { DATE_LOCALE } from './dates';
 import { createHelp } from './help';
 import { positionPopover } from './popover';
 import { button, el, formatNumber, icon, icons, request } from './shared';
@@ -74,9 +75,9 @@ export function createTabChart()
   let active = -1;
   let guide: SVGLineElement | undefined;
   let highlight: SVGCircleElement | undefined;
-  const dateTime = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-  const dateLabel = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
-  const timeLabel = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' });
+  const dateTime = new Intl.DateTimeFormat(DATE_LOCALE, { dateStyle: 'medium', timeStyle: 'short' });
+  const dateLabel = new Intl.DateTimeFormat(DATE_LOCALE, { month: 'short', day: 'numeric' });
+  const timeLabel = new Intl.DateTimeFormat(DATE_LOCALE, { hour: '2-digit', minute: '2-digit' });
 
   function updatePeriod(): void
   {

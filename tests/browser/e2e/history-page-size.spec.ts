@@ -48,7 +48,7 @@ test('history expands in pages and collapses without changing its filters or sor
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await footer.screenshot({ path: testInfo.outputPath('history-pagination-narrow.png') });
   await page.setViewportSize({ width: 1200, height: 900 });
-  const search = panel.getByRole('searchbox', { name: 'Search session names', exact: true });
+  const search = panel.getByRole('searchbox', { name: 'Search manual backups', exact: true });
   await search.fill('Backup 1');
   const names = panel.locator('.backup-title');
   await expect(names.first()).toHaveText('Backup 71');

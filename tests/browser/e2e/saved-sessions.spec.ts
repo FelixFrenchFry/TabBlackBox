@@ -60,8 +60,11 @@ test('keeps, saves, searches, exports and imports sessions in separate history p
   expect(exported.sessions).toHaveLength(2);
   await expect(research.getByRole('button', { name: 'Export session', exact: true })).toHaveAttribute('data-tooltip', 'Export session to a file');
   const remove = research.getByRole('button', { name: 'Delete session', exact: true });
-  await expect(remove).toHaveAttribute('data-tooltip', 'Delete this saved session');
+  await expect(remove).toHaveAttribute('data-tooltip', 'Delete this manual backup');
   await remove.click();
+  // name the panel beside the number because both panels number their own backups
+  await expect(page.getByRole('dialog').getByRole('heading', { name: 'Delete manual backup?', exact: true })).toBeVisible();
+  await expect(page.getByRole('dialog').locator('.session-card-name .muted')).toHaveText(/^Manual backup #\d+$/);
   await page.getByRole('dialog').getByRole('button', { name: 'Delete', exact: true }).click();
   await expect(saved.locator('.backup-row')).toHaveCount(1);
   await page.locator('input[type="file"]').setInputFiles(path);

@@ -38,7 +38,7 @@ for (const view of ['popup', 'backups']) {
     await expect(time).toHaveText('20 seconds ago');
     await expect(page.locator('.status-card:visible .status-title')).toContainText('Changes waiting for the next backup');
     await expect(page.locator('.status-card:visible .scheduled-backup time')).toHaveText('in 23 hours');
-    const exact = await time.evaluate(element => new Date(element.getAttribute('datetime') ?? '').toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+    const exact = await time.evaluate(element => new Date(element.getAttribute('datetime') ?? '').toLocaleString('en-GB', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }));
     const tooltip = page.locator('#timestamp-tooltip');
     await time.hover();
     await expect(tooltip).toBeVisible();

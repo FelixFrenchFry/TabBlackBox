@@ -1,7 +1,7 @@
 import type { IconNode } from 'lucide';
 import type { Overview } from '../model';
 import { MB } from '../storage';
-import { setTimestamp, timestamp } from './dates';
+import { DATE_LOCALE, setTimestamp, timestamp } from './dates';
 import { el, formatNumber, icon, icons, plural, request } from './shared';
 
 const TREND_DAYS = 7;
@@ -61,7 +61,7 @@ export function createStatisticsView(...panels: HTMLElement[])
   const history = statistic('Backup history', icons.History);
   // show the oldest capture as a fixed date beside the relative span
   const historyDate = el('time');
-  const dateLabel = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  const dateLabel = new Intl.DateTimeFormat(DATE_LOCALE, { year: 'numeric', month: 'short', day: 'numeric' });
   summary.append(manual.element, automatic.element, storage.element, latest.element, history.element);
   element.append(heading, summary, ...panels);
 

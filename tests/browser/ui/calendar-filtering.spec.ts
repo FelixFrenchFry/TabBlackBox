@@ -137,9 +137,9 @@ test('backup calendar filters both lists, preserves sorting, and retries a faile
     await expect(automaticPanel.locator('.backup-row').first()).toBeVisible();
     await savedPanel.getByRole('button', { name: /^Date,/ }).click();
     await expect(savedPanel.locator('.backup-title').first()).toHaveText('Calendar 01');
-    await app.page.getByRole('searchbox', { name: 'Search session names' }).fill('Calendar 01');
+    await app.page.getByRole('searchbox', { name: 'Search manual backups' }).fill('Calendar 01');
     await expect(savedPanel.locator('.backup-title')).toHaveText(['Calendar 01']);
-    await app.page.getByRole('searchbox', { name: 'Search session names' }).fill('');
+    await app.page.getByRole('searchbox', { name: 'Search manual backups' }).fill('');
     await yesterdayCell.click();
     await expect(savedPanel.locator('.backup-title')).toHaveText(['Yesterday']);
     await expect(automaticPanel.getByText('No matching backups on this date')).toBeVisible();

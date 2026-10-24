@@ -20,7 +20,7 @@ const known: Record<string, Record<string, string[]>> = {
     'nested-interactive': sessionRows,
     'label-content-name-mismatch': [
       '.snapshot-preview a.tab-open[aria-label="Open in new tab"]',
-      '.snapshot-preview button.tab-open:disabled[aria-label="This URL cannot be opened from a saved session"]',
+      '.snapshot-preview button.tab-open:disabled[aria-label="This URL cannot be opened from a backup"]',
     ],
   },
   'Settings view': { 'color-contrast': [

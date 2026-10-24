@@ -549,7 +549,7 @@ export class Repository {
       }
       signal?.throwIfAborted();
       await tx.done;
-      if (!count) throw new Error('No saved sessions are available to export.');
+      if (!count) throw new Error('No manual backups are available to export.');
       return count;
     } catch (error) {
       try { tx.abort(); } catch { /* transaction may already be complete */ }

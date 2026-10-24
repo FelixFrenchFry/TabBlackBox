@@ -55,7 +55,7 @@ function confirmCleanup(count: number): Promise<boolean>
     const title = el('h2', '', 'Delete older backups?');
     title.id = 'storage-confirm-title';
     dialog.setAttribute('aria-labelledby', title.id);
-    dialog.append(title, el('p', '', `Applying these limits will delete ${plural(count, 'older backup')}. This cannot be undone. Your saved sessions and newest recovery backup will be kept.`));
+    dialog.append(title, el('p', '', `Applying these limits will delete ${plural(count, 'older backup')}. This cannot be undone. Your manual backups and newest automatic backup will be kept.`));
     const actions = el('div', 'dialog-actions');
     const cancel = button('Cancel', icons.X);
     const confirm = button('Apply limits', icons.Database, 'button danger');
@@ -112,7 +112,7 @@ export function createSettingsView(onSaved: () => void)
   const dateText = el('div', 'setting-description');
   const dateLabel = el('label', 'setting-name', 'Date format');
   dateLabel.htmlFor = 'date-format';
-  const dateExplanation = el('p', 'muted', 'Choose between exact timestamps like "12. Sept., 2026, 20:55:07", or relative timestamps like “17 min ago”, or a combination of them.');
+  const dateExplanation = el('p', 'muted', 'Choose between exact timestamps like "12 Sept 2026, 20:55:07", or relative timestamps like “17 min ago”, or a combination of them.');
   dateExplanation.id = 'date-format-description';
   dateText.append(dateLabel, dateExplanation);
   const dateSelect = el('select', 'settings-select');

@@ -1,6 +1,8 @@
 import { positionPopover } from './popover';
 
 export type DateFormat = 'exact' | 'relative' | 'combination';
+// format dates in English like the interface text regardless of the browser language
+export const DATE_LOCALE = 'en-GB';
 const key = 'tabblackbox.date-format';
 let initialized = false;
 
@@ -19,7 +21,7 @@ export function setDateFormat(value: DateFormat): void
 export function formatDate(value: number, format: DateFormat, now = Date.now()): string
 {
   if (format === 'combination') return formatDate(value, 'exact', now) + ' (' + formatDate(value, 'relative', now) + ')';
-  if (format === 'exact') return new Date(value).toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  if (format === 'exact') return new Date(value).toLocaleString(DATE_LOCALE, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
   const seconds = (value - now) / 1000;
   const minutes = Math.floor(Math.abs(seconds) / 60);
   for (const [unit, size] of [['day', 1440], ['hour', 60], ['min', 1]] as const) {

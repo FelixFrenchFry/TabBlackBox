@@ -1,5 +1,6 @@
 import { CALENDAR_LEVELS, calendarRange, calendarScale, dayRange } from '../calendar';
 import { errorMessage, type BackupDay, type HistoryRange, type Metadata } from '../model';
+import { DATE_LOCALE } from './dates';
 import { createHelp } from './help';
 import { positionPopover } from './popover';
 import { button, el, icon, icons, request } from './shared';
@@ -73,7 +74,7 @@ export function createBackupCalendar(onSelect: (range: HistoryRange | null) => v
   let displayedRange = '';
   const cells = new Map<number, HTMLButtonElement>();
   let counts = new Map<number, BackupDay>();
-  const format = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+  const format = new Intl.DateTimeFormat(DATE_LOCALE, { year: 'numeric', month: 'long', day: 'numeric' });
   let tooltipTarget: HTMLButtonElement | null = null;
   let tooltipTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -159,14 +160,14 @@ export function createBackupCalendar(onSelect: (range: HistoryRange | null) => v
         if (date.getDate() === 1) {
           index = (date.getDay() + 6) % 7;
           month = el('div', 'calendar-month-group');
-          const name = date.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+          const name = date.toLocaleDateString(DATE_LOCALE, { month: 'long', year: 'numeric' });
           month.setAttribute('role', 'group');
           month.setAttribute('aria-label', name);
           const label = el('span', 'calendar-month', name);
           label.setAttribute('aria-hidden', 'true');
           month.append(label);
           for (let weekday = 0; weekday < 7; weekday++) {
-            const label = el('span', 'calendar-weekday muted', new Date(2024, 0, 1 + weekday).toLocaleDateString(undefined, { weekday: 'short' }));
+            const label = el('span', 'calendar-weekday muted', new Date(2024, 0, 1 + weekday).toLocaleDateString(DATE_LOCALE, { weekday: 'short' }));
             label.style.gridArea = `2 / ${weekday + 1}`;
             label.setAttribute('aria-hidden', 'true');
             month.append(label);
@@ -252,7 +253,7 @@ export function createBackupCalendar(onSelect: (range: HistoryRange | null) => v
       if (current !== generation) return;
       if (data.kind !== 'calendar') throw new Error('Unexpected calendar response.');
       render(range, data.days);
-      const months = new Intl.DateTimeFormat(undefined, { month: 'short', year: 'numeric' });
+      const months = new Intl.DateTimeFormat(DATE_LOCALE, { month: 'short', year: 'numeric' });
       period.textContent = months.formatRange(range.start, range.end - 1);
       message.replaceChildren();
       loadedKey = key;
