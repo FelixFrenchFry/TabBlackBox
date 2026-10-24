@@ -137,7 +137,8 @@ export function createSettingsView(onSaved: () => void)
   dateRow.append(dateText, dateControl);
   appearanceBody.append(themeRow, dateRow, appearanceFeedback);
 
-  const { element: storage, body: storageBody } = settingsPanel('Storage limits', icons.Database);
+  // a variable named storage makes WXT bundle its storage helper
+  const { element: storagePanel, body: storageBody } = settingsPanel('Storage limits', icons.Database);
   const usage = el('p', 'settings-storage muted', 'Checking storage…');
   const usageRow = el('div', 'storage-usage');
   const percentage = el('span', 'storage-percentage muted', '—');
@@ -309,7 +310,7 @@ export function createSettingsView(onSaved: () => void)
   restoreBody.append(restoreControls.element);
   const feedback = el('div');
   feedback.setAttribute('aria-live', 'polite');
-  element.append(heading, feedback, automatic, storage, restore, appearance);
+  element.append(heading, feedback, automatic, storagePanel, restore, appearance);
   const view = {
     element,
     update(overview: Overview): void

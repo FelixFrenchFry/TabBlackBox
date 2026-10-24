@@ -57,20 +57,23 @@ test('captures, previews, restarts and restores real windows, pins, groups and d
     await app.page.reload();
     const history = await send(app.page, { kind: 'history', before: null });
     if (history.kind !== 'history') throw new Error('History missing');
-    const index = history.items.findIndex(item => item.id === backup.id);
-    await app.page.locator('.backup-row').nth(index).getByRole('button', { name: 'Restore', exact: true }).click();
+    const panel = app.page.getByRole('region', { name: backup.source === 'manual' ? 'Manual backups' : 'Automatic backups', exact: true });
+    const index = history.items.filter(item => item.source === backup.source).findIndex(item => item.id === backup.id);
+    const row = panel.locator('.backup-row').nth(index);
+    await row.getByRole('button', { name: 'Restore', exact: true }).click();
     const dialog = app.page.getByRole('dialog');
     await expect(dialog).toBeVisible();
     await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeFocused();
     await app.page.keyboard.press('Escape');
     await expect(dialog).not.toBeVisible();
-    await app.page.locator('.backup-row').nth(index).getByRole('button', { name: 'Restore', exact: true }).click();
+    await row.getByRole('button', { name: 'Restore', exact: true }).click();
     await dialog.getByRole('button', { name: 'Restore', exact: true }).click();
     await expect.poll(async () =>
     {
       const value = await send(app.page, { kind: 'overview' });
-      return value.kind === 'overview' ? value.overview.metadata.operation?.kind : null;
-    }).toBe('completed');
+      const operation = value.kind === 'overview' ? value.overview.metadata.operation : null;
+      return operation ? `${operation.kind} ${operation.snapshotId}` : null;
+    }).toBe(`completed ${backup.id}`);
     const restored = await app.page.evaluate(async ids =>
     {
       const windows = await chrome.windows.getAll({ populate: true });
