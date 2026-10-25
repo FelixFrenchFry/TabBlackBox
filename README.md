@@ -65,7 +65,7 @@ npm install
 npm run build
 ```
 
-In a chromium browser, open `chrome://extensions`, turn on **Developer mode**, choose **Load unpacked**, and select `.output/chrome-mv3` to add the extension.
+In a Chromium browser, open `chrome://extensions`, turn on **Developer mode**, choose **Load unpacked**, and select `.output/chrome-mv3` to add the extension.
 
 ## Testing
 

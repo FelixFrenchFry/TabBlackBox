@@ -68,7 +68,7 @@ jobs:
 
       # reuse the old build until the baseline commit changes
       - name: Restore baseline build
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .baseline
           key: baseline-${{ runner.os }}-${{ hashFiles('scripts/build-baseline.mjs') }}

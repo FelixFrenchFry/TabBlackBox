@@ -23,5 +23,5 @@ try {
   const rows = ['#ffffff', '#808080', '#30343b'].map(background => `<section style="background:${background}">${[16, 20, 32, 128].map(size => `<div><span style="width:${size}px;height:${size}px">${svg}</span><label>${size} px</label></div>`).join('')}</section>`).join('');
   await page.setViewportSize({ width: 640, height: 560 });
   await page.setContent(`<style>body{margin:0;font:13px system-ui}section{display:flex;align-items:center;justify-content:space-around;height:180px}div{display:flex;flex-direction:column;align-items:center;gap:12px;width:140px}span{display:block}svg{width:100%;height:100%;display:block}label{background:white;color:#111;padding:2px 6px;border-radius:4px}</style>${rows}`);
-  await page.screenshot({ path: 'assets/logo/toolbar-preview.png', clip: { x: 0, y: 0, width: 640, height: 540 } });
+  await page.screenshot({ path: 'assets/logo/tabblackbox-orange-preview.png', clip: { x: 0, y: 0, width: 640, height: 540 } });
 } finally { await browser.close(); }

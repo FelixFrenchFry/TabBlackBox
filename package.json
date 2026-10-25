@@ -2,6 +2,12 @@
   "name": "tabblackbox",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
+  "author": "FelixFrenchFry",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/FelixFrenchFry/TabBlackBox.git"
+  },
   "type": "module",
   "scripts": {
     "dev": "wxt",
