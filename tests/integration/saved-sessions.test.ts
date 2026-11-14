@@ -111,7 +111,9 @@ it('deletes an archive explicitly and repairs latest metadata without reusing nu
     expect(await repository.metadata()).toMatchObject({ latestId: newer.id, lastSavedAt: 4000 });
     expect((await repository.list()).map(item => item.id)).not.toContain(first.id);
     // a later manual backup moves the pointer but the newest automatic backup stays protected
-    await repository.capture(session('manual later'), 'manual', 5000, null);
+    const manual = await repository.capture(session('manual later'), 'manual', 5000, null);
+    // the automatic schedule keeps following the newest automatic backup
+    expect(await repository.metadata()).toMatchObject({ latestId: manual.kind === 'saved' ? manual.id : null, lastSavedAt: 4000 });
     await expect(repository.deleteSession(newer.id)).rejects.toThrow('newest automatic backup cannot be deleted');
   } finally { await repository.close(); }
 });

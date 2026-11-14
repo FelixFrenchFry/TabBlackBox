@@ -25,6 +25,7 @@ for (const view of ['popup', 'backups']) {
           result.data.overview.status = { kind: 'pending' };
           result.data.overview.metadata.automatic = { enabled: true, intervalMinutes: 1440, pausedUntil: null };
           result.data.overview.metadata.lastSavedAt = savedAt;
+          if (result.data.overview.latest) result.data.overview.latest.capturedAt = savedAt;
         }
         if (message.kind === 'overview') document.documentElement.dataset.polls = String(++polls);
         return result;

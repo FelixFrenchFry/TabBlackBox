@@ -100,3 +100,28 @@ it('rebuilds a suspended frequency deadline on restart without accepting its old
     expect(await repository.list()).toHaveLength(2);
   } finally { controller.stopTimers(); await repository.close(); }
 });
+
+it('keeps the frequency deadline after a manual backup', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+  const repository = new Repository(crypto.randomUUID());
+  const scan = vi.fn(async () => session('A'));
+  const controller = new Controller(repository, scan, port);
+  try {
+    await controller.start();
+    await controller.setAutomaticSettings({ kind: 'frequency', value: 60 });
+    const { lastSavedAt } = await repository.metadata();
+    // a manual backup just before the deadline does not postpone the next automatic backup
+    await vi.advanceTimersByTimeAsync(59 * 60_000);
+    scan.mockImplementation(async () => session('B'));
+    await controller.capture('manual');
+    expect((await repository.metadata()).lastSavedAt).toBe(lastSavedAt);
+    // the periodic reconcile alarm captures once the deadline has passed
+    await vi.advanceTimersByTimeAsync(2 * 60_000);
+    await controller.capture('automatic');
+    await controller.idle();
+    const { items: [newest], count } = await repository.history(null, 10, 'automatic');
+    if (!newest) throw new Error('Missing automatic backup');
+    expect(count).toBe(2);
+    expect(await repository.get(newest.id)).toMatchObject({ source: 'automatic', windows: [{ tabs: [{ title: 'B' }] }] });
+  } finally { controller.stopTimers(); await repository.close(); }
+});

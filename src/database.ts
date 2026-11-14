@@ -423,7 +423,8 @@ export class Repository {
         await tx.objectStore('snapshots').add(stored);
         await tx.objectStore('summaries').add(summarize(decodeSnapshot(stored, state.tabs), storedBytes(stored)));
         // commit the number with the snapshot so failed or unchanged captures do not consume it
-        Object.assign(metadata, { latestId: candidate.id, lastSavedAt: now });
+        metadata.latestId = candidate.id;
+        if (source === 'automatic') metadata.lastSavedAt = now;
       }
       updateStorage(metadata, state);
       metadata.lastCheckedAt = now;

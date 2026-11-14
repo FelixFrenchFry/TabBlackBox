@@ -125,7 +125,7 @@ export function createStatusView({ expandable = false }: { expandable?: boolean 
       // preserve time nodes across polls so only the date clock advances unchanged timestamps
       resumeAt.hidden = suspended !== 'paused';
       setTimestamp(resumeTime, suspended === 'paused' ? automatic.pausedUntil : null);
-      setTimestamp(savedTime, metadata.lastSavedAt);
+      setTimestamp(savedTime, latest?.capturedAt ?? metadata.lastSavedAt);
     },
   };
 }

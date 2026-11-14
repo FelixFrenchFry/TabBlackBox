@@ -81,6 +81,16 @@ describe('released schema-9 database', () =>
     } finally { await repository.close(); }
   });
 
+  it('keeps the released automatic schedule when later versions save manual backups', async () =>
+  {
+    const repository = new Repository(await loadReleasedDatabase());
+    try {
+      const capture = await repository.capture({ windows: [{ groups: [], tabs: [{ url: 'https://example.com/manual', title: 'Manual after update', pinned: false, group: null }] }] }, 'manual', later, null);
+      if (capture.kind !== 'saved') throw new Error('Manual backup was not saved');
+      expect(await repository.metadata()).toMatchObject({ latestId: capture.id, lastSavedAt: metadata?.lastSavedAt });
+    } finally { await repository.close(); }
+  });
+
   it('stays consistent while later versions capture, keep, delete, import, and prune', async () =>
   {
     const name = await loadReleasedDatabase();

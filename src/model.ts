@@ -55,6 +55,7 @@ export type Metadata = {
   automatic: AutomaticSettings;
   settings: StorageSettings;
   restore: RestoreSettings;
+  // lastSavedAt is the capture time of the newest automatic backup and schedules the next one
   latestId: string | null; lastSavedAt: number | null; lastCheckedAt: number | null;
   bytes: number; automaticBytes: number; savedBytes: number; count: number; operation: Operation | null;
   lastTabId: number;
