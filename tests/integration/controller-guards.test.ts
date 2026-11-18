@@ -371,18 +371,35 @@ it('refreshes the automatic storage count when an unchanged capture prunes an ex
   expect(automaticStorage).toMatchObject({ count: 1, newestId });
 }));
 
-it('refreshes the newest automatic backup when a capture replaces one at the backup limit', () => scenario(async ({ controller, show }) =>
+it('reads a consistent overview while a capture replaces the only automatic backup', () => scenario(async ({ controller, repository }) =>
 {
   await controller.start();
   await controller.setStorageSettings({ retentionDays: null, maxBackups: 1, maxStorageMB: 100 }, 0);
   const before = await controller.overview();
   expect(before.automaticStorage).toMatchObject({ count: 1, newestId: before.metadata.latestId });
-  show(['https://example.test/b']);
-  const newestId = await saved(controller.capture('automatic'));
-  expect(newestId).not.toBe(before.metadata.latestId);
-  const { automaticStorage, metadata } = await controller.overview();
-  expect(metadata).toMatchObject({ count: before.metadata.count, latestId: newestId, historyRevision: before.metadata.historyRevision });
-  expect(automaticStorage).toMatchObject({ count: 1, newestId });
+  const capturedAt = Date.now() + 1000;
+  const get = IDBObjectStore.prototype.get;
+  let replacement: Promise<string> | undefined;
+  // queue retention after the overview starts reading metadata
+  const firstRead = vi.spyOn(IDBObjectStore.prototype, 'get').mockImplementationOnce(function (this: IDBObjectStore, key) {
+    const request = get.call(this, key);
+    replacement = saved(repository.capture(session(['https://example.test/b']), 'automatic', capturedAt));
+    return request;
+  });
+  try {
+    expect(await controller.overview()).toEqual(before);
+    const newestId = await replacement;
+    expect(newestId).toEqual(expect.any(String));
+    expect(newestId).not.toBe(before.metadata.latestId);
+    const { automaticStorage, metadata, latest, oldestCapturedAt } = await controller.overview();
+    expect(metadata).toMatchObject({ count: before.metadata.count, latestId: newestId, historyRevision: before.metadata.historyRevision });
+    expect(automaticStorage).toMatchObject({ count: 1, newestId });
+    expect(latest?.id).toBe(newestId);
+    expect(oldestCapturedAt).toBe(capturedAt);
+  } finally {
+    firstRead.mockRestore();
+    await replacement;
+  }
 }));
 
 it('checks file access when any window has a local file and restores supported tabs among unsupported ones', async () =>

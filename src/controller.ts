@@ -24,7 +24,7 @@ export class Controller {
   private generation = 0;
   private automatic: AutomaticSettings = { ...DEFAULT_AUTOMATIC_SETTINGS };
   private timer: ReturnType<typeof setTimeout> | undefined;
-  private scheduledCapture: CaptureSchedule | undefined;
+  private scheduledCapture: { id: string; kind: 'debounce' | 'deadline' } | undefined;
   private firstChange: number | undefined;
   private queue: Promise<void> = Promise.resolve();
   private restoration: RestorationState = { kind: 'idle' };
@@ -100,14 +100,15 @@ export class Controller {
       return;
     }
     if (this.status.kind !== 'error') this.status = { kind: 'pending' };
+    if (this.automatic.intervalMinutes > 0 && this.scheduledCapture?.kind === 'deadline') return;
     this.firstChange ??= Date.now();
-    this.scheduleCapture(Math.max(0, Math.min(2000, this.firstChange + 10_000 - Date.now())));
+    this.scheduleCapture(Math.max(0, Math.min(2000, this.firstChange + 10_000 - Date.now())), 'debounce');
   }
 
-  private scheduleCapture(delay: number): void
+  private scheduleCapture(delay: number, kind: 'debounce' | 'deadline' = 'deadline'): void
   {
     const schedule: CaptureSchedule = { id: crypto.randomUUID(), when: Date.now() + delay };
-    this.scheduledCapture = schedule;
+    this.scheduledCapture = { id: schedule.id, kind };
     this.scheduleWake(schedule);
     clearTimeout(this.timer);
     this.timer = setTimeout(() =>
@@ -132,10 +133,18 @@ export class Controller {
       if (this.restoration.kind === 'waiting') this.restoration.automaticPending = true;
       return;
     }
-    if (source === 'automatic' && Date.now() < this.retryAfter) return;
-    this.stopTimers();
-    // fix capture admission before asynchronous work begins
-    return this.enqueue(() => this.performCapture(source, name));
+    if (source === 'automatic') {
+      if (Date.now() < this.retryAfter) return;
+      this.stopTimers();
+    } else if (this.automatic.intervalMinutes === 0 && this.scheduledCapture?.kind === 'debounce') {
+      // manual saves clear the pending tab-change timer in on-change mode
+      this.stopTimers();
+    }
+    return this.enqueue(async () => {
+      // honor a write backoff set by an earlier capture in the queue
+      if (source === 'automatic' && Date.now() < this.retryAfter) return;
+      return this.performCapture(source, name);
+    });
   }
 
   private captureFailed(error: unknown, phase: 'scan' | 'write'): void
@@ -182,7 +191,10 @@ export class Controller {
     }
     try {
       const result = await this.repository.capture(session, source, Date.now(), name);
-      if (source === 'manual' && this.automatic.enabled && this.automatic.pausedUntil !== null && this.automatic.pausedUntil > Date.now()) this.scheduleCapture(this.automatic.pausedUntil - Date.now());
+      // restore a missing pause wake after a manual save
+      if (source === 'manual' && !this.scheduledCapture && this.automatic.enabled && this.automatic.pausedUntil !== null && this.automatic.pausedUntil > Date.now()) {
+        this.scheduleCapture(this.automatic.pausedUntil - Date.now());
+      }
       this.retryAfter = 0;
       this.status = generation === this.generation
         ? { kind: result.kind === 'empty' ? 'empty' : 'current' } : { kind: 'pending' };
