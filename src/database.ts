@@ -1,6 +1,6 @@
 import { applyAutomaticUpdate, DEFAULT_AUTOMATIC_SETTINGS } from './automatic';
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
-import type { AutomaticUpdate, BackupDay, CaptureResult, Collection, HistoryCursor, HistoryRange, HistorySort, Metadata, Operation, RestoreSettings, SearchField, Session, SessionDetails, Snapshot, Source, StorageSettings, StorageSettingsResult, StoredSnapshot, StoredTab, Summary, TabCountPoint, TabMatch, TabSearchField, TopSites, TopSitesScope } from './model';
+import type { AutomaticUpdate, BackupDay, CaptureResult, Collection, HistoryCursor, HistoryRange, HistorySort, Metadata, Operation, Overview, RestoreSettings, SearchField, Session, SessionDetails, Snapshot, Source, StorageSettings, StorageSettingsResult, StoredSnapshot, StoredTab, Summary, TabCountPoint, TabMatch, TabSearchField, TopSites, TopSitesScope } from './model';
 import { DEFAULT_RESTORE_SETTINGS } from './restore-settings';
 import { compareHistory, SEARCH_FIELDS, TAB_SEARCH_FIELDS } from './history';
 import { dayRange } from './calendar';
@@ -145,6 +145,7 @@ function nextSessionNumber(metadata: Metadata, source: Source): number
 
 export class Repository {
   private connection: Promise<IDBPDatabase<BackupDatabase>> | null = null;
+  private automaticStorage: { key: string } & Omit<Overview['automaticStorage'], 'bytes'> | undefined;
   constructor(private readonly name = 'tabblackbox', private readonly budget?: number) {}
 
   private db(): Promise<IDBPDatabase<BackupDatabase>>
@@ -167,6 +168,35 @@ export class Repository {
   async metadata(): Promise<Metadata>
   {
     return (await (await this.db()).get('metadata', 'state')) ?? initialMetadata();
+  }
+
+  async overview(): Promise<Omit<Overview, 'status'>>
+  {
+    // read metadata and summaries in one transaction so a concurrent write cannot mix revisions
+    const tx = (await this.db()).transaction(['metadata', 'summaries']);
+    const metadata = (await tx.objectStore('metadata').get('state')) ?? initialMetadata();
+    const summaries = tx.objectStore('summaries');
+    const latest = metadata.latestId ? await summaries.get(metadata.latestId) : null;
+    if (latest === undefined) throw new Error('This backup is no longer available. Refresh history.');
+    const byDate = summaries.index('capturedAt');
+    const oldestCapturedAt = (await byDate.openCursor())?.value.capturedAt ?? null;
+    // captures change latestId, pruning changes count, and other history edits raise historyRevision
+    const key = `${metadata.historyRevision}:${metadata.count}:${metadata.latestId}`;
+    let storage = this.automaticStorage;
+    if (storage?.key !== key) {
+      let count = 0;
+      let newest: Summary | undefined;
+      for (const item of await byDate.getAll()) {
+        if (item.savedAt !== undefined) continue;
+        count++;
+        if (!newest || compareHistory(item, newest, 'date-desc') < 0) newest = item;
+      }
+      storage = { key, count, newestId: newest?.id ?? null };
+    }
+    await tx.done;
+    this.automaticStorage = storage;
+    const { count, newestId } = storage;
+    return { metadata, latest, automaticStorage: { bytes: metadata.automaticBytes, count, newestId }, oldestCapturedAt };
   }
 
   async get(id: string): Promise<Snapshot>

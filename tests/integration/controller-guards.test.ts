@@ -3,7 +3,7 @@ import 'fake-indexeddb/auto';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { Controller, type CaptureSchedule } from '../../src/controller';
 import { Repository } from '../../src/database';
-import type { Session } from '../../src/model';
+import type { Session, Summary } from '../../src/model';
 import type { RestorePort } from '../../src/restore';
 
 // capture after the settling delay instead of the product backup frequency
@@ -304,6 +304,85 @@ it('reports only automatic backups in the automatic storage summary', () => scen
   const { automaticStorage, metadata } = await controller.overview();
   expect(metadata.latestId).toBe(manual);
   expect(automaticStorage).toMatchObject({ count: 1, newestId: automatic });
+}));
+
+it('reads a consistent overview while the only automatic backup is kept', () => scenario(async ({ controller, repository }) =>
+{
+  await controller.start();
+  const before = await repository.metadata();
+  const id = before.latestId;
+  if (!id) throw new Error('Backup not saved');
+  expect(before.automaticBytes).toBeGreaterThan(0);
+  const get = IDBObjectStore.prototype.get;
+  let kept: Promise<Summary> | undefined;
+  // queue the write after the overview starts reading metadata
+  const firstRead = vi.spyOn(IDBObjectStore.prototype, 'get').mockImplementationOnce(function (this: IDBObjectStore, key) {
+    const request = get.call(this, key);
+    kept = repository.keep(id, 'Kept', Date.now());
+    return request;
+  });
+  try {
+    const overview = await controller.overview();
+    expect(await kept).toMatchObject({ id, savedAt: expect.any(Number) });
+    expect(overview.automaticStorage).toEqual({ bytes: before.automaticBytes, count: 1, newestId: id });
+    expect(overview.latest?.id).toBe(id);
+    expect(overview.latest?.savedAt).toBeUndefined();
+    const next = await controller.overview();
+    expect(next.automaticStorage).toEqual({ bytes: 0, count: 0, newestId: null });
+    expect(next.latest).toMatchObject({ id, savedAt: expect.any(Number) });
+  } finally {
+    firstRead.mockRestore();
+    await kept;
+  }
+}));
+
+it('rereads the automatic storage summary only after history changes', () => scenario(async ({ controller, repository }) =>
+{
+  await controller.start();
+  const first = (await controller.overview()).metadata.latestId;
+  if (!first) throw new Error('Backup not saved');
+  const readAllSummaries = vi.spyOn(IDBIndex.prototype, 'getAll');
+  try {
+    // polls without history changes reuse the summary
+    expect((await controller.overview()).automaticStorage).toMatchObject({ count: 1, newestId: first });
+    expect(readAllSummaries).not.toHaveBeenCalled();
+    // keeping moves the backup to the saved collection without changing count or latestId
+    await repository.keep(first, 'Kept', Date.now());
+    expect((await controller.overview()).automaticStorage).toEqual({ bytes: 0, count: 0, newestId: null });
+    expect(readAllSummaries).toHaveBeenCalledOnce();
+  } finally { readAllSummaries.mockRestore(); }
+}));
+
+it('refreshes the automatic storage count when an unchanged capture prunes an expired backup', () => scenario(async ({ controller, show }) =>
+{
+  const hour = 60 * 60_000;
+  await controller.start();
+  vi.setSystemTime(Date.now() + 12 * hour);
+  show(['https://example.test/b']);
+  const newestId = await saved(controller.capture('automatic'));
+  await controller.setStorageSettings({ retentionDays: 1, maxBackups: null, maxStorageMB: 100 }, 0);
+  const before = await controller.overview();
+  expect(before.automaticStorage).toMatchObject({ count: 2, newestId });
+  // expire only the older backup without changing the latest backup
+  vi.setSystemTime(Date.now() + 18 * hour);
+  expect(await controller.capture('automatic')).toEqual({ kind: 'unchanged' });
+  const { automaticStorage, metadata } = await controller.overview();
+  expect(metadata).toMatchObject({ count: 1, latestId: newestId, historyRevision: before.metadata.historyRevision });
+  expect(automaticStorage).toMatchObject({ count: 1, newestId });
+}));
+
+it('refreshes the newest automatic backup when a capture replaces one at the backup limit', () => scenario(async ({ controller, show }) =>
+{
+  await controller.start();
+  await controller.setStorageSettings({ retentionDays: null, maxBackups: 1, maxStorageMB: 100 }, 0);
+  const before = await controller.overview();
+  expect(before.automaticStorage).toMatchObject({ count: 1, newestId: before.metadata.latestId });
+  show(['https://example.test/b']);
+  const newestId = await saved(controller.capture('automatic'));
+  expect(newestId).not.toBe(before.metadata.latestId);
+  const { automaticStorage, metadata } = await controller.overview();
+  expect(metadata).toMatchObject({ count: before.metadata.count, latestId: newestId, historyRevision: before.metadata.historyRevision });
+  expect(automaticStorage).toMatchObject({ count: 1, newestId });
 }));
 
 it('checks file access when any window has a local file and restores supported tabs among unsupported ones', async () =>
